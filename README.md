@@ -67,6 +67,7 @@ The detailed first test and its proof requirements are discussion drafts:
 
 - [Acceptance Profile v0.1](docs/ACCEPTANCE-PROFILE-v0.1.md)
 - [Evidence Packet v0.1](docs/EVIDENCE-PACKET-v0.1.md)
+- [Node Certification Evidence Pack v0.1](docs/NODE-CERTIFICATION-EVIDENCE-PACK-v0.1.md)
 
 The result deliberately separates per-implementation conformance from pairwise
 interoperability. The first passing run should yield two implementation results
