@@ -16,14 +16,7 @@ The first integration targets are:
 - the production Interlateral Platform at `events.interlateral.com`, connected
   through a bounded protocol adapter; and
 - the protocol-first Interlateral Platform beta/reference implementation at
-  `open-events.interlateral.com`; and
-- a deliberately minimal Project Connect reference node that is independently
-  deployed and participates as a real protocol peer, not merely as a mock or
-  report generator.
-
-A logically separate test runner orchestrates the test and verifies its
-evidence. The runner is not counted as one of the three protocol nodes, even if
-it is operated on related infrastructure.
+  `open-events.interlateral.com`.
 
 Project Connect is intended to test the protocol from the outside. Conformance
 must be demonstrated through public protocol surfaces and observable behavior,
@@ -53,17 +46,12 @@ that principal may perform a particular action, who granted that authority, and
 under which scope, mandate, constraints, and expiration**. A conforming
 implementation must not infer authority merely from a valid identity claim.
 
-## First success milestone: the three-node triangle
+## First success milestone
 
-Three independently deployed protocol nodes pass a shared conformance profile
-and complete the full interoperability triangle: Alpha (A), Beta or another
-full implementation (B), and the minimal Project Connect reference node (C).
+Two independently deployed implementations pass a shared conformance profile:
 
-- each node publishes a federated event that appears correctly on both peers;
-- private control events do not cross node boundaries;
-- each node acts as both participant home and event host across the six directed
-  paths A->B, B->A, A->C, C->A, B->C, and C->B;
-- a verified remote participant requests access;
+- an event created on one instance appears on the other;
+- a verified participant from the second instance requests access;
 - the event host approves the request and issues a signed, event-scoped
   authorization grant plus credentials bound to that grant;
 - the remote participant completes an action permitted by the grant;
@@ -80,10 +68,9 @@ The detailed first test and its proof requirements are discussion drafts:
 - [Acceptance Profile v0.1](docs/ACCEPTANCE-PROFILE-v0.1.md)
 - [Evidence Packet v0.1](docs/EVIDENCE-PACKET-v0.1.md)
 
-The result deliberately separates per-implementation conformance, pairwise
-interoperability, and network interoperability. The first passing run should
-yield three implementation results, three pair results, and one result for the
-exact tested three-node network.
+The result deliberately separates per-implementation conformance from pairwise
+interoperability. The first passing run should yield two implementation results
+and one result for the exact tested implementation pair.
 
 ## Project posture
 
@@ -100,8 +87,7 @@ exact tested three-node network.
 ## Status
 
 Project initialization. The protocol profile, adapter boundaries, test harness,
-minimal reference node, and three-node demonstration plan will be developed in
-this repository.
+and two-node demonstration plan will be developed in this repository.
 
 ## License
 

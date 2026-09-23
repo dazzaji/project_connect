@@ -14,14 +14,10 @@ Project Connect produces two distinct findings:
    black box.
 2. **Pairwise interoperability:** two identified implementations successfully
    exchange and enforce the protocol objects required by this profile.
-3. **Network interoperability:** three identified implementations successfully
-   operate as a full peer triangle, with each node acting as participant home
-   and event host rather than relying on a privileged central platform.
 
-Passing one finding does not imply another. A pairwise result names both
+Passing one finding does not imply the other. A pairwise result names both
 implementation builds and is not automatically transferable to later builds or
-to a third implementation. A network result names all three builds and does not
-automatically apply to a larger network.
+to a third implementation.
 
 ## Test subjects
 
@@ -29,16 +25,11 @@ automatically apply to a larger network.
   its bounded Project Connect adapter.
 - **Node B:** an independently deployed Interlateral Platform Beta or later
   protocol-enabled implementation.
-- **Node C:** the minimal Project Connect reference node. C must persist its own
-  keys and protocol state and must actually publish, validate, authorize,
-  reject, revoke, receipt, and export. It may be small, but it may not fabricate
-  evidence in place of protocol exchanges.
 - **Runner V:** an independent black-box test runner and offline verifier.
 
-Each of A, B, and C has a different hostname, signing key, protocol-state store,
-administrator, and deployment. The test must not use shared database access or
-private implementation hooks. Runner V is a logically separate role and key;
-it is not counted as a protocol node even if Dazza operates both C and V.
+Each node has a different hostname, signing key, database, administrator, and
+deployment. The test must not use shared database access or private
+implementation hooks.
 
 ## Required gates
 
@@ -52,19 +43,18 @@ it is not counted as a protocol node even if Dazza operates both C and V.
 
 ### G1 - Independent conformance
 
-Runner V executes the same normative black-box test suite separately against A,
-B, and C. Required endpoint, schema, error, signature, time, idempotency, cursor,
+Runner V executes the same normative black-box test suite separately against A
+and B. Required endpoint, schema, error, signature, time, idempotency, cursor,
 authorization, receipt, revocation, and export tests must pass.
 
 ### G2 - Governed peering and discovery
 
-- A, B, and C establish explicit, mutually approved peer relationships: A-B,
-  A-C, and B-C.
-- Each node publishes one federated event. Both peers obtain it through the
-  protocol and display the same global event identifier, home node, pack,
-  version, status, policy, and update time.
-- Each node also publishes a private or non-federated control event; none of the
-  three control events crosses a node boundary.
+- A and B establish an explicit, mutually approved peer relationship.
+- B publishes a federated event; A obtains it through the protocol and displays
+  the same global event identifier, home node, pack, version, status, policy,
+  and update time.
+- A publishes a second event and B discovers it, proving both directions.
+- A private or non-federated control event does not cross either boundary.
 
 ### G3 - Remote identity and signed authorization
 
@@ -113,16 +103,14 @@ The packet records the rejection but never records a reusable credential.
 - Taking either peer offline does not prevent the other node's local events or
   local participants from operating.
 
-### G7 - Full-triangle proof
+### G7 - Bidirectional proof
 
-Run G3 through G6 across all six directed paths: A->B, B->A, A->C, C->A,
-B->C, and C->B. Each node must serve as participant home and event host. This
-distinguishes network interoperability from a one-way adapter, a privileged hub,
-or a two-party special case.
+Repeat G3 through G6 with B as the participant's home and A as the event host.
+This distinguishes genuine interoperability from a one-way import adapter.
 
 ### G8 - Offline evidence verification
 
-- Close all three test events and produce their export bundles.
+- Close both test events and produce their export bundles.
 - Runner V verifies schemas, content hashes, signatures, receipt chains,
   authorization links, revocations, event decisions, and origin provenance
   without database or administrator access.
@@ -133,22 +121,19 @@ or a two-party special case.
 
 The run passes only when:
 
-- A, B, and C each pass the required conformance suite;
-- every required interoperability gate G2-G8 passes across the full triangle;
+- A and B each pass the required conformance suite;
+- every required interoperability gate G2-G8 passes in both directions;
 - all required negative tests fail in the expected way;
 - no unresolved critical or high-severity deviation remains;
 - the evidence packet is complete, internally hash-consistent, and verifies
   offline; and
-- A, B, C, and Runner V sign attestations identifying the exact packet root
-  hash.
+- A, B, and Runner V sign attestations identifying the exact packet root hash.
 
 The resulting claims are:
 
 - `ILP-CONFORMANCE-v0.1` for the tested build of A;
 - `ILP-CONFORMANCE-v0.1` for the tested build of B; and
-- `ILP-CONFORMANCE-v0.1` for the tested build of C;
-- `ILP-INTEROP-PAIR-v0.1` for each exact A/B, A/C, and B/C build pair; and
-- `ILP-INTEROP-NETWORK-v0.1` for that exact A/B/C build trio.
+- `ILP-INTEROP-PAIR-v0.1` for that exact A/B build pair.
 
 These labels are provisional Project Connect test-result names, not third-party
 certifications or warranties.
