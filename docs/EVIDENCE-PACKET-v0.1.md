@@ -40,13 +40,16 @@ project-connect-run-<run-id>/
   implementations/
     node-a.json
     node-b.json
+    node-c.json
     runner.json
   discovery/
     node-a.json
     node-b.json
+    node-c.json
   conformance/
     node-a-results.json
     node-b-results.json
+    node-c-results.json
   interoperability/
     scenario.json
     assertions.json
@@ -66,12 +69,14 @@ project-connect-run-<run-id>/
   exports/
     node-a-event/
     node-b-event/
+    node-c-event/
   verification/
     report.json
     report.md
   attestations/
     node-a.json
     node-b.json
+    node-c.json
     runner.json
 ```
 
@@ -84,8 +89,8 @@ role and every required artifact can be located deterministically.
 
 - packet and acceptance-profile versions;
 - globally unique run ID and start/end timestamps;
-- A, B, and V identifiers, URLs, implementation/build versions, and public-key
-  fingerprints;
+- A, B, C, and V identifiers, URLs, implementation/build versions, and
+  public-key fingerprints;
 - test-suite and verifier names, versions, and source identifiers;
 - declared protocol versions and test profile;
 - verdicts for each node and the pair;
@@ -189,8 +194,14 @@ machine-readable JSON and concise Markdown. Its report must distinguish:
 - packet integrity;
 - Node A conformance;
 - Node B conformance;
+- Node C conformance;
 - A-to-B interoperability;
 - B-to-A interoperability;
+- A-to-C interoperability;
+- C-to-A interoperability;
+- B-to-C interoperability;
+- C-to-B interoperability;
+- full-triangle network interoperability;
 - authorization enforcement;
 - revocation and failure isolation;
 - export and provenance verification;
