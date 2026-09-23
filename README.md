@@ -63,6 +63,15 @@ Two independently deployed implementations pass a shared conformance profile:
   identity, agent, authorization-grant, issuer, and action provenance and verify
   without database access.
 
+The detailed first test and its proof requirements are discussion drafts:
+
+- [Acceptance Profile v0.1](docs/ACCEPTANCE-PROFILE-v0.1.md)
+- [Evidence Packet v0.1](docs/EVIDENCE-PACKET-v0.1.md)
+
+The result deliberately separates per-implementation conformance from pairwise
+interoperability. The first passing run should yield two implementation results
+and one result for the exact tested implementation pair.
+
 ## Project posture
 
 - Each event has one authoritative home instance.
