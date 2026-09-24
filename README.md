@@ -1,9 +1,9 @@
 # Project Connect
 
 Project Connect is the interoperability and conformance-testing project for the
-first Interlateral Protocol-enabled implementations.
+first Interlateral Protocol-enabled implementations. Eventually, once this is stable and production-ready, the name should become something like "Interlateral Connect" and can have a simple certification mark for systems that conform to the protocol and are confirmed to be interoperable (ie they have permission to use an "Interlateral Connect" logo, can be listed in a directory of certified systems, and can be connected to the federation so their events and users and activities are part of the network). 
 
-Its initial purpose is to prove that independently operated platforms can use a
+The initial purpose of this repo is to prove that independently operated platforms can use a
 shared protocol to discover events, establish governed trust, admit remote
 participants, preserve human and agent identity provenance, issue and verify
 signed authorization, exchange receipts, and produce verifiable event records
