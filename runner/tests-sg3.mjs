@@ -402,10 +402,14 @@ export const SG3_TESTS = {
     try {
       const o1 = await observe(ctx.host, E1.id);
       const o2 = await observe(ctx.host, ctx.events.E2.id);
+      // the rejected join must also leave E2's join list unchanged (SG2V2-RUNNER-NEGATIVE-GAP): a pending join is admission state
+      const joinsE2 = async () => expectOk(await http("GET", `${ctx.host.base}/ilp/v1/events/${ctx.events.E2.id}/join-requests`, { bearer: ctx.creds.operator.E2 }), 200, "E2 join list").items.map((j) => j.join_request_id).sort().join(",");
+      const j2 = await joinsE2();
       expectProblem(await act(ctx.host, E1, ctx.token, proposal("while suspended")), "PEER_SUSPENDED", "act while home suspended");
       expectProblem(await http("POST", `${ctx.host.base}/ilp/v1/events/${ctx.events.E2.id}/join-requests`, { body: { claim: spare } }), "PEER_SUSPENDED", "join while home suspended");
       await expectNoSideEffects(ctx.host, E1.id, o1, "act while home suspended");
       await expectNoSideEffects(ctx.host, ctx.events.E2.id, o2, "join while home suspended");
+      check((await joinsE2()) === j2, "a join rejected while the home was suspended created a join request on E2");
       const st = expectOk(await http("GET", ctx.grantPayload.status.uri), 200, "grant status");
       check(st.status === "suspended", `grant status while suspended: ${st.status}`);
       const list = expectOk(await http("GET", `${ctx.host.base}/ilp/v1/federation/peers`), 200, "peers");

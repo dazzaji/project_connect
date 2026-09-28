@@ -86,17 +86,19 @@ export async function expectNoSideEffects(node, eventRef, before, what, bearer =
 }
 
 // ---- the runner's own reference nodes (runner-as-node, R-CONF-3) ----
-export async function startReferenceNode({ name, port, work, bound = 60 }) {
+// `baseUrl`/`listenPort`: a node may declare one origin (e.g. a runner-owned proxy in front of it) while listening elsewhere
+export async function startReferenceNode({ name, port, work, bound = 60, baseUrl = null, listenPort = null }) {
   const dir = join(work, name);
   mkdirSync(dir, { recursive: true });
   const admin = randomBytes(24).toString("base64url");
   writeFileSync(join(dir, "admin.token"), admin, { mode: 0o600 });
-  const base = `http://${name}.localhost:${port}`;
-  const child = spawn(process.execPath, [join(PC_ROOT, "reference-node", "main.mjs"), "--base-url", base, "--port", String(port), "--key-file", join(dir, "key.json"), "--admin-token-file", join(dir, "admin.token"), "--dev", "--bound", String(bound)], { stdio: ["ignore", "ignore", "pipe"], detached: true });
+  const base = baseUrl ?? `http://${name}.localhost:${port}`;
+  const lp = listenPort ?? port;
+  const child = spawn(process.execPath, [join(PC_ROOT, "reference-node", "main.mjs"), "--base-url", base, "--port", String(lp), "--key-file", join(dir, "key.json"), "--admin-token-file", join(dir, "admin.token"), "--dev", "--bound", String(bound)], { stdio: ["ignore", "ignore", "pipe"], detached: true });
   child.stderr.on("data", (d) => writeFileSync(join(dir, "node.log"), d, { flag: "a" }));
   for (let i = 0; i < 100; i++) {
     try {
-      if ((await fetch(`${base}/healthz`)).ok) break;
+      if ((await fetch(`http://127.0.0.1:${lp}/healthz`)).ok) break;
     } catch {}
     await new Promise((r) => setTimeout(r, 100));
   }

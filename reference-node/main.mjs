@@ -27,8 +27,16 @@ try {
   const kf = JSON.parse(readFileSync(keyFile, "utf8"));
   if (!Array.isArray(kf.keys) || !kf.keys.length) throw new Error("empty keyring");
   // every key must be a real Ed25519 private key whose public half matches its published x
+  const kids = new Set();
   for (const k of kf.keys) {
     if (typeof k.kid !== "string" || !k.kid) throw new Error("a key has no kid");
+    if (kids.has(k.kid)) throw new Error(`duplicate kid ${k.kid}`);
+    kids.add(k.kid);
+    // not_after must be a calendar-valid RFC 3339 date-time (the discovery schema's date-time): Date.parse alone accepts Feb 31
+    if (k.not_after !== undefined) {
+      const d = new Date(k.not_after);
+      if (typeof k.not_after !== "string" || Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== k.not_after.slice(0, 10)) throw new Error(`key ${k.kid} not_after is not a calendar-valid date-time`);
+    }
     const derived = createPublicKey(createPrivateKey({ key: { kty: "OKP", crv: "Ed25519", d: k.d, x: k.x }, format: "jwk" })).export({ format: "jwk" });
     if (derived.crv !== "Ed25519" || derived.x !== k.x || Buffer.from(k.d, "base64url").length !== 32) throw new Error(`key ${k.kid} is not a consistent Ed25519 key pair`);
   }
@@ -49,7 +57,15 @@ try {
 } catch {}
 const deploymentId = `${new URL(baseUrl).hostname}-${new Date().toISOString()}`;
 
-const node = createNode({ baseUrl, name: "Project Connect reference node", key, keyring, build, deploymentId, adminToken, revocationBoundS: Number(args.bound ?? 60), log: (m) => console.error(`[${new Date().toISOString()}] ${m}`) });
+const node0 = createNode({ baseUrl, name: "Project Connect reference node", key, keyring, build, deploymentId, adminToken, revocationBoundS: Number(args.bound ?? 60), log: (m) => console.error(`[${new Date().toISOString()}] ${m}`) });
+// the discovery document this node will publish is validated strictly against the frozen schema before it serves anything
+// (R-CORE-39(a)); malformed key metadata stops startup (ASTRA-17)
+{
+  const { validate } = await import("../lib/schemas.mjs");
+  const v = validate("discovery", node0.discovery());
+  if (!v.ok) die(`discovery document invalid: ${v.errors.slice(0, 3).join("; ")}; refusing to start`);
+}
+const node = node0;
 node.startPolling();
 await serve({ port, host: args.host ?? "::", routes: node.routes, log: console.error });
 console.error(`reference node ${baseUrl} (build ${build}, kid ${key.kid}) listening on ${port}`);

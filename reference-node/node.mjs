@@ -82,7 +82,11 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
     if (!c) throw new Problem("AUTH_INVALID");
     if (c.revoked) throw new Problem("AUTH_REVOKED");
     if (!kinds.includes(c.kind)) throw new Problem("FORBIDDEN", `credential kind ${c.kind} not permitted`);
-    if (c.kind === "operator" && eventId && c.event !== eventId) throw new Problem("FORBIDDEN", "operator credential is scoped to another event");
+    if (c.kind === "operator" && eventId && c.event !== eventId) {
+      // a credential for another event learns nothing about a private event: NOT_FOUND, exactly as for an absent id (SG2R4-OP-SCOPE)
+      if (events.get(eventId)?.visibility === "private") throw new Problem("NOT_FOUND", `event ${eventId}`);
+      throw new Problem("FORBIDDEN", "operator credential is scoped to another event");
+    }
     return c;
   }
   const requireAdmin = (headers) => requireCredential(headers, []);
@@ -229,8 +233,13 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
     for (let page = 0; page < 1000; page++) {
       const feed = await fetchJson(`${p.base_url}/ilp/v1/federation/revocations?since=${since}`);
       if (!validate("revocation-feed", feed).ok) throw new Error(`malformed revocation feed from ${p.host}`);
-      // a feed behind what was already consumed has been reset or replaced: its state is unknown (fail closed, R-FED-21)
-      if (feed.latest_seq < since) throw new Error(`revocation feed from ${p.host} went backwards (latest_seq ${feed.latest_seq} < consumed ${since})`);
+      // a feed behind what was already consumed has been reset or replaced: the peer's revocation state is unknown from
+      // this moment (freshness dropped, cursor reset) until the replacement feed has been read completely from 0 (R-FED-21)
+      if (feed.latest_seq < since) {
+        p.last_good_refresh_ms = 0;
+        p.last_seq = 0;
+        throw new Error(`revocation feed from ${p.host} went backwards (latest_seq ${feed.latest_seq} < consumed ${since}); re-reading from 0`);
+      }
       latest = feed.latest_seq;
       for (const item of feed.items) {
         let payload;

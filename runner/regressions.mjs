@@ -229,16 +229,23 @@ const PROBES = {
       const claim = expectOk(await http("POST", `${rst.base}/ilp/v1/claims`, { bearer: prov, body: { purpose: "event_join", event: ev.global_id, aud: host.base, agent: null, on_behalf_of: syn.human } }), 201, "claim").claim;
       const j = expectOk(await http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests`, { body: { claim } }), 202, "join");
       expectOk(await http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests/${local(j.join_request_id)}/approve`, { bearer: op, body: {} }), 200, "approve");
-      // the home restarts with an empty feed (same keys): whatever it revokes next is invisible to a cursor at 3
+      // the home restarts with an EMPTY feed (same keys) and then revokes the approved subject: that revocation is seq 1 of
+      // the replacement feed — invisible to a host that keeps its cursor at 3 and stays "fresh" (SG2R4-FEED-RESET-GREEN)
       n.stop();
       await sleep(500);
       n = await startReferenceNode({ name, port: 4195, work });
+      const prov2 = await adapter(n, { harness }).credential("provisioning");
+      expectOk(await http("POST", `${n.base}/ilp/v1/admin/synthetic/humans/${local(syn.human)}/revoke`, { bearer: prov2, body: {} }), 200, "restarted home revokes the subject");
       const bound = (await http("GET", `${host.base}/.well-known/interlateral.json`)).json.federation.revocation_bound_s;
-      await sleep((2 * bound + 5) * 1000);
+      // well inside the freshness window: two poll intervals (bound/6 each) is enough to detect the reset and re-read from 0
+      await sleep((Math.max(2, Math.floor(bound / 3)) + 3) * 1000);
       const r = await http("GET", `${host.base}/ilp/v1/events/${ev.id}/join-requests/${local(j.join_request_id)}`, { bearer: j.retrieval_key });
-      check(!r.json?.participant_token, "a token was delivered while the home's revocation feed had gone backwards");
-      expectProblem(r, "REVOCATION_STATE_UNKNOWN", "retrieval after the home's feed reset");
-      return { waited_s: 2 * bound + 5, reported: "REVOCATION_STATE_UNKNOWN" };
+      check(!r.json?.participant_token, "a token was delivered to a subject revoked on the home's replacement feed");
+      check(["SUBJECT_REVOKED", "REVOCATION_STATE_UNKNOWN"].includes(r.json?.title), `retrieval after the feed reset: ${r.status} ${r.json?.title}`);
+      // once the replacement feed has been read completely, the revocation itself is the reason
+      await sleep((Math.max(2, Math.floor(bound / 3)) + 3) * 1000);
+      expectProblem(await http("GET", `${host.base}/ilp/v1/events/${ev.id}/join-requests/${local(j.join_request_id)}`, { bearer: j.retrieval_key }), "SUBJECT_REVOKED", "retrieval after the replacement feed was consumed");
+      return { in_window: r.json?.title, after_reread: "SUBJECT_REVOKED" };
     } finally {
       n.stop();
     }
