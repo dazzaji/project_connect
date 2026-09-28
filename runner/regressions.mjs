@@ -234,18 +234,21 @@ const PROBES = {
       n.stop();
       await sleep(500);
       n = await startReferenceNode({ name, port: 4195, work });
-      const prov2 = await adapter(n, { harness }).credential("provisioning");
-      expectOk(await http("POST", `${n.base}/ilp/v1/admin/synthetic/humans/${local(syn.human)}/revoke`, { bearer: prov2, body: {} }), 200, "restarted home revokes the subject");
+      // the restarted home no longer knows the subject; its admin surface publishes the signed revocation directly (seq 1 of the new feed)
+      expectOk(await http("POST", `${n.base}/ilp/v1/admin/revocations`, { bearer: n.admin, body: { kind: "human", subject: syn.human, reason: "revoked after restart" } }), 201, "restarted home revokes the subject");
       const bound = (await http("GET", `${host.base}/.well-known/interlateral.json`)).json.federation.revocation_bound_s;
       // well inside the freshness window: two poll intervals (bound/6 each) is enough to detect the reset and re-read from 0
       await sleep((Math.max(2, Math.floor(bound / 3)) + 3) * 1000);
       const r = await http("GET", `${host.base}/ilp/v1/events/${ev.id}/join-requests/${local(j.join_request_id)}`, { bearer: j.retrieval_key });
       check(!r.json?.participant_token, "a token was delivered to a subject revoked on the home's replacement feed");
       check(["SUBJECT_REVOKED", "REVOCATION_STATE_UNKNOWN"].includes(r.json?.title), `retrieval after the feed reset: ${r.status} ${r.json?.title}`);
-      // once the replacement feed has been read completely, the revocation itself is the reason
+      // once the replacement feed has been read completely, the revocation has been applied: the join is rejected
+      // (a host may report SUBJECT_REVOKED, or the join's status as rejected) and no token is ever delivered
       await sleep((Math.max(2, Math.floor(bound / 3)) + 3) * 1000);
-      expectProblem(await http("GET", `${host.base}/ilp/v1/events/${ev.id}/join-requests/${local(j.join_request_id)}`, { bearer: j.retrieval_key }), "SUBJECT_REVOKED", "retrieval after the replacement feed was consumed");
-      return { in_window: r.json?.title, after_reread: "SUBJECT_REVOKED" };
+      const r2 = await http("GET", `${host.base}/ilp/v1/events/${ev.id}/join-requests/${local(j.join_request_id)}`, { bearer: j.retrieval_key });
+      check(!r2.json?.participant_token, "a token was delivered after the replacement feed was consumed");
+      check(r2.json?.title === "SUBJECT_REVOKED" || (r2.status === 200 && r2.json?.status === "rejected"), `after the re-read: ${r2.status} ${r2.json?.title ?? r2.json?.status}`);
+      return { in_window: r.json?.title, after_reread: r2.json?.title ?? r2.json?.status };
     } finally {
       n.stop();
     }

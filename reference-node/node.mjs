@@ -586,6 +586,15 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
       }
       return { status: 201, body: { human, display_name: humans.get(human).display_name, synthetic: true, agent } };
     }],
+    // runner-owned admin surface: publish a signed revocation for a subject homed here (used to place a revocation on a
+    // RESTARTED home's replacement feed, whose in-memory state no longer holds the subject — regressions SG2R3-W-FEED-RESET)
+    ["POST", "/ilp/v1/admin/revocations", ({ headers, body }) => {
+      requireAdmin(headers);
+      if (!["human", "agent", "plate", "claim"].includes(body.kind)) throw new Problem("VALIDATION_FAILED", "kind must be human|agent|plate|claim");
+      if (typeof body.subject !== "string" || (body.kind !== "plate" && hostOfGid(body.subject) !== host)) throw new Problem("VALIDATION_FAILED", "subject must be a global ID homed here");
+      const rec = publishRevocation(body.kind, body.subject, String(body.reason ?? "revoked").slice(0, 200));
+      return { status: 201, body: { revoked: body.subject, revocation: rec.jti, seq: rec.seq } };
+    }],
     ["POST", "/ilp/v1/admin/synthetic/:type/:id/revoke", ({ headers, params, body }) => {
       requireCredential(headers, ["provisioning"]);
       const map = params.type === "humans" ? humans : params.type === "agents" ? agents : null;
