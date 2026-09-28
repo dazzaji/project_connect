@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ilp:schema:revocation-feed:v1",
+  "title": "ILP revocation feed page — GET /ilp/v1/federation/revocations?since=<seq>",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x_": {}
+  },
+  "required": [
+    "items",
+    "next_cursor",
+    "latest_seq"
+  ],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "patternProperties": {
+          "^x_": {}
+        },
+        "required": [
+          "seq",
+          "jws"
+        ],
+        "properties": {
+          "seq": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "jws": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
+          }
+        }
+      }
+    },
+    "next_cursor": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "latest_seq": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

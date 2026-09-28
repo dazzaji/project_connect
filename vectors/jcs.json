@@ -1,0 +1,72 @@
+{
+  "cases": [
+    {
+      "id": "JCS-1",
+      "input": "{\"b\":2,\"a\":1}",
+      "expect": "{\"a\":1,\"b\":2}"
+    },
+    {
+      "id": "JCS-2",
+      "input": "{\"€\":1,\"\\r\":2,\"1\":3,\"é\":4}",
+      "expect": "{\"\\r\":2,\"1\":3,\"é\":4,\"€\":1}",
+      "note": "UTF-16 code-unit order"
+    },
+    {
+      "id": "JCS-3",
+      "input": "{\"a\":[3,{\"z\":null,\"y\":true}],\"s\":\"\\u00e9\\n\"}",
+      "expect": "{\"a\":[3,{\"y\":true,\"z\":null}],\"s\":\"é\\n\"}"
+    },
+    {
+      "id": "JCS-4",
+      "input": "{\"n\":-0}",
+      "expect": "{\"n\":0}"
+    },
+    {
+      "id": "JCS-5",
+      "input": "{\"n\":9007199254740991}",
+      "expect": "{\"n\":9007199254740991}"
+    },
+    {
+      "id": "JCS-6",
+      "input": "{\"s\":\"é\"}",
+      "expect": "{\"s\":\"é\"}",
+      "note": "precomposed; never normalized"
+    },
+    {
+      "id": "JCS-7",
+      "input": "{\"s\":\"é\"}",
+      "expect": "{\"s\":\"é\"}",
+      "note": "decomposed stays decomposed"
+    },
+    {
+      "id": "JCS-BAD-1",
+      "input": "{\"n\":1.5}",
+      "expect": "reject",
+      "note": "non-integer"
+    },
+    {
+      "id": "JCS-BAD-2",
+      "input": "{\"n\":1e400}",
+      "expect": "reject",
+      "note": "infinity"
+    },
+    {
+      "id": "JCS-BAD-3",
+      "input": "{\"n\":9007199254740993}",
+      "expect": "reject",
+      "note": "beyond ±(2^53−1)"
+    },
+    {
+      "id": "JCS-BAD-4",
+      "input": "{\"s\":\"\\ud800\"}",
+      "expect": "reject",
+      "note": "lone surrogate"
+    },
+    {
+      "id": "JCS-BAD-5",
+      "input": "{\"n\":1.0e0}",
+      "expect": "{\"n\":1}",
+      "note": "1.0e0 parses to the integer 1; accepted"
+    }
+  ]
+}

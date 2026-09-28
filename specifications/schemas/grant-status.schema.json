@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ilp:schema:grant-status:v1",
+  "title": "ILP grant status document — GET /ilp/v1/grants/{id}/status (R-AUTHZ-9)",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x_": {}
+  },
+  "required": [
+    "status",
+    "changed_at"
+  ],
+  "properties": {
+    "status": {
+      "enum": [
+        "active",
+        "revoked",
+        "expired",
+        "superseded",
+        "suspended"
+      ]
+    },
+    "changed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 500
+    }
+  }
+}

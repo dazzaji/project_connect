@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ilp:schema:identity-claim:v2",
+  "title": "ILP identity claim — payload of an ilp-claim+jwt (R-ID-17)",
+  "$comment": "exp − iat ≤ 86400 is a semantic rule (R-ID-18). No email or any member outside this set (R-SEC-19); `x_` members are tolerated on receive only.",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x_": {}
+  },
+  "required": [
+    "iss",
+    "sub",
+    "aud",
+    "iat",
+    "exp",
+    "jti",
+    "display_name",
+    "verified",
+    "verified_method",
+    "agent",
+    "purpose",
+    "event",
+    "consent_accepted"
+  ],
+  "properties": {
+    "iss": {
+      "type": "string",
+      "pattern": "^https?://[a-z0-9.-]+(:[0-9]{1,5})?$",
+      "$comment": "scheme + host [+ port], no path"
+    },
+    "sub": {
+      "type": "string",
+      "pattern": "^ilp:[a-z0-9.-]+:human:[A-Za-z0-9-]+$"
+    },
+    "aud": {
+      "type": "string",
+      "pattern": "^https?://[a-z0-9.-]+(:[0-9]{1,5})?$",
+      "$comment": "scheme + host [+ port], no path"
+    },
+    "iat": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "exp": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "jti": {
+      "type": "string",
+      "minLength": 16,
+      "maxLength": 200
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "verified": {
+      "type": "boolean"
+    },
+    "verified_method": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "agent": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^x_": {}
+          },
+          "required": [
+            "id",
+            "display_name",
+            "license_plate"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^ilp:[a-z0-9.-]+:agent:[A-Za-z0-9-]+$"
+            },
+            "display_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "license_plate": {
+              "type": "string",
+              "pattern": "^IL-[A-Z2-9]{8}$"
+            }
+          }
+        }
+      ]
+    },
+    "purpose": {
+      "const": "event_join"
+    },
+    "event": {
+      "type": "string",
+      "pattern": "^ilp:[a-z0-9.-]+:event:[A-Za-z0-9-]+$"
+    },
+    "consent_accepted": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^x_": {}
+          },
+          "required": [
+            "kind",
+            "text_version",
+            "text_sha256"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string"
+            },
+            "text_version": {
+              "type": "string"
+            },
+            "text_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

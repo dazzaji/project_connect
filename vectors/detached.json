@@ -1,0 +1,112 @@
+{
+  "keys": {
+    "https://home.example": [
+      {
+        "kid": "vec-home-1",
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
+        "use": "sig"
+      }
+    ],
+    "https://host.example": [
+      {
+        "kid": "vec-host-1",
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "gTl3Dqh9F19Wo1Rmw0x-zMuNipG07jeiXfYPW4_Js5Q",
+        "use": "sig"
+      }
+    ],
+    "https://other.example": [
+      {
+        "kid": "vec-other-1",
+        "kty": "OKP",
+        "crv": "Ed25519",
+        "x": "7UkoxijRwsbq6QM4kFmVYSlZJzpcY_k2NsFGFKyHN9E",
+        "use": "sig"
+      }
+    ]
+  },
+  "good": {
+    "id": "DET-GOOD-1",
+    "object": {
+      "format": "ilp-export/1",
+      "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+      "created_at": "2026-09-27T13:00:00Z",
+      "created_by": "ilp:host.example:human:00000000-0000-7000-8000-0000000000aa",
+      "instance": {
+        "host": "host.example",
+        "kid": "vec-host-1"
+      },
+      "files": [
+        {
+          "path": "receipts.jsonl",
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "bytes": 1234
+        }
+      ],
+      "receipts_head_hash": "409717ef3ac428f4ff2fe6d159a9c32ce3ae132a30f30f5907ecaca6c5b58dbd",
+      "consent_versions": [],
+      "kid": "vec-host-1",
+      "signature": "-UGNWpru6NCFvb7nNTHihg9tXkxGM8oUQznGg7-6JcM1tRIC0momvaNzpzMZMSWp055DhKZc0oQAp-DdFlsMBg"
+    },
+    "signer": "https://host.example"
+  },
+  "bad": [
+    {
+      "id": "DET-BAD-1",
+      "object": {
+        "format": "ilp-export/1",
+        "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+        "created_at": "2026-09-27T13:00:00Z",
+        "created_by": "ilp:host.example:human:00000000-0000-7000-8000-0000000000aa",
+        "instance": {
+          "host": "host.example",
+          "kid": "vec-host-1"
+        },
+        "files": [
+          {
+            "path": "receipts.jsonl",
+            "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "bytes": 1234
+          }
+        ],
+        "receipts_head_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "consent_versions": [],
+        "kid": "vec-host-1",
+        "signature": "-UGNWpru6NCFvb7nNTHihg9tXkxGM8oUQznGg7-6JcM1tRIC0momvaNzpzMZMSWp055DhKZc0oQAp-DdFlsMBg"
+      },
+      "signer": "https://host.example",
+      "expect": "SIGNATURE_INVALID",
+      "note": "member altered after signing"
+    },
+    {
+      "id": "DET-BAD-2",
+      "object": {
+        "format": "ilp-export/1",
+        "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+        "created_at": "2026-09-27T13:00:00Z",
+        "created_by": "ilp:host.example:human:00000000-0000-7000-8000-0000000000aa",
+        "instance": {
+          "host": "host.example",
+          "kid": "vec-host-1"
+        },
+        "files": [
+          {
+            "path": "receipts.jsonl",
+            "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "bytes": 1234
+          }
+        ],
+        "receipts_head_hash": "409717ef3ac428f4ff2fe6d159a9c32ce3ae132a30f30f5907ecaca6c5b58dbd",
+        "consent_versions": [],
+        "kid": "vec-other-1",
+        "signature": "-UGNWpru6NCFvb7nNTHihg9tXkxGM8oUQznGg7-6JcM1tRIC0momvaNzpzMZMSWp055DhKZc0oQAp-DdFlsMBg"
+      },
+      "signer": "https://host.example",
+      "expect": "UNKNOWN_SIGNER",
+      "note": "kid not published by signer"
+    }
+  ]
+}

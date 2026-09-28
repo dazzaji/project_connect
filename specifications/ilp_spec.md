@@ -1,10 +1,10 @@
 # Interlateral Protocol (ILP) Specification
 
-**Version 0.0.1 — Working Draft**
+**Version 0.0.2 — Working Draft**
 
 | Field | Value |
 |---|---|
-| Specification version | `0.0.1` |
+| Specification version | `0.0.2` |
 | Status | Working Draft (pre-stable). Not frozen; not a certification basis. |
 | Date | 2026-09-27 |
 | Protocol family | `ilp/1` (wire path prefix `/ilp/v1/`) — see §1.1 |
@@ -209,7 +209,8 @@ Specifications and conformance tests evolve together. Every artifact that can ch
 | Version | Date | Content |
 |---|---|---|
 | `0.0.0.1` | 2026-07-06 → 2026-09-24 | **Baseline.** (a) The ILP specification suite "2026-07-06 rev 2": five protocol documents (ILP-CORE, ILP-ID, ILP-EVENT, ILP-COLLAB, ILP-FED), security, architecture, data model, UI, two procedure-pack documents, a conformance plan with nine test documents, and thirteen JSON Schemas. These were held as untracked files in an implementation repository. (b) Three Project Connect discussion drafts in `project_connect/docs/`: Acceptance Profile, Evidence Packet, and Node Certification Evidence Pack, with filenames labeled "v0.1" (see OI-4). Appendix A fingerprints every source. |
-| `0.0.1` | 2026-09-27 | **This document.** Consolidation, cleanup, reconciliation, and gap-fill. Changelog in §1.6. |
+| `0.0.1` | 2026-09-27 | Consolidation, cleanup, reconciliation, and gap-fill. Changelog in §1.6. |
+| `0.0.2` | 2026-09-27 | **This document.** Schemas, vectors, and the candidate profile `pc-0.1-s1` under version control; SCR-1 to SCR-4. Changelog in §1.7; release record in `specifications/releases/0.0.2.json`. |
 
 ### 1.4 Roadmap to 0.5.0 *(proposed)*
 
@@ -263,6 +264,18 @@ Specifications and conformance tests evolve together. Every artifact that can ch
   - the three-node, two-cloud acceptance topology, from a protocol requirement to a conformance profile (§15.6);
   - the baseline's build gates G1–G8, retired as specification content because their names collided with the acceptance gates (§15.9).
 - Recorded 22 known defects (§18) and 19 open issues (§19).
+
+### 1.7 Changelog for 0.0.2
+
+- **Schemas under version control (OI-1, OI-2 resolved).** `specifications/schemas/` holds 15 strict JSON Schemas (Draft 2020-12): the updated `discovery` v2, `identity-claim` v2, `receipt` v2, `export-manifest` v2, `problem` v2, and the new `authorization-grant`, `grant-status`, `revocation-record`, `revocation-feed`, `peer-record`, `directory-entry`, `join-request`, `attestation`, `test-result`, `evidence-packet-manifest`. All permit `x_` members (R-CORE-39(c)).
+- **Test vectors published (OI-8, format and location).** `vectors/`: canonicalization, JWS (good and bad for claims, grants, revocation records, attestations), receipt chains (including the `resource` wire form, K-21), and detached signatures. They regenerate deterministically from published test seeds (`tools/gen-vectors.mjs`).
+- **Candidate profile.** `profile/pc-0.1-s1.json` (candidate; 43 tests), with its scenario matrix, parameters, exclusions, actor and credential table, declared interfaces, and negative-fixture catalogue.
+- **Spec Change Requests accepted:**
+  - **SCR-1** — Synthetic-principal provisioning credential (R-CONF-6).
+  - **SCR-2** — Presented grants, the `ILP-Grant` request header, and precedence step 4a (R-AUTHZ-15); identity presented as authority (R-AUTHZ-16); event scoping of tokens under grants (R-AUTHZ-17).
+  - **SCR-3** — `federation.active_kid` in discovery (R-CORE-34(g)).
+  - **SCR-4** — Peer records and reinstatement records (R-FED-3a, R-FED-10a); the claim-minting request (R-FED-7a).
+- **Credential prefixes** `ilpo_`, `ilpf_`, and `ilpp_` registered (§17.11).
 
 ---
 
@@ -498,7 +511,8 @@ All other modules inherit these conventions.
   | 1 | Credential presence and validity | `AUTH_MISSING`, `AUTH_INVALID`, `AUTH_EXPIRED`, `AUTH_REVOKED`, `CSRF_FAILED` |
   | 2 | Resource existence and visibility | `NOT_FOUND` |
   | 3 | Registration or admission state | `FORBIDDEN` + `code_detail: PENDING_APPROVAL` |
-  | 4 | Grant status, validity window, credential binding (§7) | `GRANT_REVOKED`, `GRANT_EXPIRED`, `GRANT_BINDING_MISMATCH` |
+  | 4a | *[NEW 0.0.2, SCR-2]* Authenticity of a **presented** grant (R-AUTHZ-15): issuer and audience are this host, then signature | `GRANT_AUDIENCE_MISMATCH`, `SIGNATURE_INVALID`, `UNKNOWN_SIGNER` |
+| 4 | Grant status, validity window, credential binding (§7) | `GRANT_REVOKED`, `GRANT_EXPIRED`, `GRANT_BINDING_MISMATCH`, `PEER_SUSPENDED` |
   | 5 | Grant event and audience | `GRANT_EVENT_MISMATCH`, `GRANT_AUDIENCE_MISMATCH` |
   | 6 | Grant scope and exclusions | `GRANT_SCOPE_VIOLATION` |
   | 7 | Event status and phase, including the grace window | `PHASE_MISMATCH`; `code_detail` `EVENT_NOT_LIVE`, `ACTION_PHASE_FORBIDDEN`, `EXPECT_PHASE_STALE` |
@@ -619,6 +633,7 @@ Example (0.0.1):
 - **(d) One active key.** Exactly one key is designated active. Every new signature MUST use the active key and carry its `kid`.
 - **(e) Rotation.** To rotate, publish the new key, switch the active designation, and keep the old key listed per R-CORE-21.
 - **(f) Compromise.** Handle a key compromise per R-FED-16. Standard key-status signaling is tracked as OI-17.
+- **(g) Declared active key [NEW 0.0.2, SCR-3].** The discovery document MUST name the active key in `federation.active_kid`, and that `kid` MUST be listed in `keys`. Verifiers use it to check R-CORE-34(d) black-box.
 
 ### 5.9 Receipts
 
@@ -948,6 +963,13 @@ This section supersedes the latter as the protocol object for authority.
 - **R-AUTHZ-14 — Delegation reserved.**
   - `parent_grant` MUST be `null` in 0.0.x.
   - Sub-delegation (agent to sub-agent), attenuation, and cross-host delegation chains are OI-6.
+- **R-AUTHZ-15 [NEW 0.0.2, SCR-2] — Presented grants.**
+  - A request MAY carry a grant in the `ILP-Grant` header (the JWS Compact string). When it does, the host MUST evaluate **that** grant, and MUST NOT fall back to another.
+  - When it does not, the host evaluates the current grant bound to the presented participant token.
+  - A presented grant is first authenticated (R-CORE-29 step 4a): its `iss` and `aud` MUST both be this host (else `GRANT_AUDIENCE_MISMATCH`, without further verification), and its signature MUST verify under this host's published keys (else `SIGNATURE_INVALID` or `UNKNOWN_SIGNER`). The host then applies steps 4–6 using the status it holds for that grant's `jti`.
+  - *Rationale: negative conformance cases (foreign, tampered, and cross-bound grants) must be constructible through public interfaces (R-CONF-1).*
+- **R-AUTHZ-16 [NEW 0.0.2, SCR-2] — Identity presented as authority.** A request to a governed endpoint authenticated only by a valid identity claim (a verifying `ilp-claim+jwt` presented as the bearer credential) MUST be rejected with `AUTHZ_REQUIRED` and no side effects. An identity claim is never a credential (P11, R-ID-18).
+- **R-AUTHZ-17 [NEW 0.0.2, SCR-2] — Event scoping under grants.** When a remote principal's participant token (and its grant) is presented against an event other than the grant's `event`, the host MUST report `GRANT_EVENT_MISMATCH` (step 5), not a registration-state error.
 
 ### 7.3 Example (payload of an `ilp-grant+jwt`)
 
@@ -1263,6 +1285,7 @@ See §14.
   - Peer states are `proposed → active → suspended → removed`. Every change is audited and receipted.
   - Only `active` peers are honored.
 - **R-FED-4** — `GET /ilp/v1/federation/peers` is public and lists active peers.
+- **R-FED-3a [NEW 0.0.2, SCR-4] — Peer records.** Peer-list items validate against `peer-record`. `common_spec_versions` is the intersection of both sides' `spec_versions`; an empty array is how a mismatch is surfaced (R-FED-15). Suspended peers are listed with `state: "suspended"` so that the change is publicly visible.
 
 ### 10.3 Federated event directory
 
@@ -1305,6 +1328,7 @@ The steps:
 7. **Participate.** M and M's agent use B's ILP-EVENT API exactly as a local participant would, and every governed action is evaluated against the grant (§7).
 
 - **R-FED-7** — Steps 3–6 are the normative join protocol. Every state change emits feed records and receipts on B. Claim minting is audited on A.
+- **R-FED-7a [NEW 0.0.2, SCR-4] — Claim-minting request.** `POST /ilp/v1/claims` takes `{ purpose: "event_join", event: <host event global ID>, aud: <host base URL>, agent: <agent global ID> | null, consent_accepted?: {kind, text_version, text_sha256} }`. The home MUST refuse (`NOT_A_PEER`) when the host named by `aud` is not an active peer, and MUST set `sub` to the requesting human. Under a provisioning credential (R-CONF-6), `on_behalf_of` names the synthetic human.
 - **R-FED-8** — B MUST treat A's attestation as **identity evidence, not authority** (P11). Admission is B's decision.
 - **R-FED-9** — Receipts and exports on B record M with M's A-origin global ID, the claim reference, and the **grant reference** [CHANGED 0.0.1]. A never receives copies of E's records.
 
@@ -1322,6 +1346,7 @@ The steps:
   - Feed: `GET /ilp/v1/federation/revocations?since=<seq>` → `{ items: [ { seq, jws } ], next_cursor, latest_seq }`.
   - The feed is readable by active peers (R-FED-2 governs request authentication). Because each record is signed, it can also be verified offline.
   - Hosts MUST check the specific subject at join time. They MUST poll active peers' feeds within the declared bound for shadow principals holding active tokens. On a hit, they revoke the affected tokens and grants and alert the operator.
+- **R-FED-10a [NEW 0.0.2, SCR-4] — Reinstatement.** Reinstating a suspended peer is published as a revocation record of kind `peer` with `reinstated: true`. Consumers apply records in `seq` order.
 - **R-FED-11** — Local revocation always works, whatever the federation state:
   - a host can eject any remote participant instantly;
   - a home's revocation takes effect at the host's next check;
@@ -1606,6 +1631,11 @@ A procedure-pack attestation is orthogonal to role profiles. Example: "Context H
   - Peering is performed by the human admins themselves, or through a peering-scoped credential.
   - Conformance MUST NOT depend on reading a node's local mailbox, manipulating its clock, or resetting its database (R-OPS-10).
   - Local-login behavior (§6.2) is tested separately, under an Identity-Home profile. That profile uses either operator cooperation or a runner-controlled mailbox domain, so the node sends real email and the runner reads it.
+- **R-CONF-6 [NEW 0.0.2, SCR-1] — Synthetic-principal provisioning credential.**
+  - To test a node in the **home** role black-box, its admin MAY mint a provisioning credential (`ilpp_…`). It is declared, audited, revocable, and visible to operators, and it is never included in evidence.
+  - Its scope is limited to: creating humans and agents marked `synthetic` (`POST /ilp/v1/admin/synthetic/humans`); minting identity claims for them (`POST /ilp/v1/claims` with `on_behalf_of`); and revoking them (`POST /ilp/v1/admin/synthetic/(humans|agents)/{id}/revoke`), which publishes revocation records as any home revocation does.
+  - It MUST NOT act on any principal not marked `synthetic`, and it confers no event, operator, or peering authority.
+  - *Rationale: the runner-as-node model (R-CONF-3) homes synthetic principals on the reference node; this is how an implementation under test can play the home role without a mailbox or database hook.*
 - **R-CONF-4 [NEW 0.0.1]** — Independence of test counterparts.
   - Reference nodes and verifiers SHOULD be written independently of the implementations they test: by different authors, with no shared semantic code.
   - Shared test vectors and shared cryptographic or canonicalization libraries are permitted.
@@ -1846,7 +1876,7 @@ The statuses of new codes are [DRAFT].
 
 ### 17.11 Credential prefixes
 
-`ilpt_` — participant token. Session cookie names are implementation-specific.
+`ilpt_` — participant token. `ilpo_` — scoped conformance-operator credential (R-CONF-3). `ilpf_` — peering-scoped credential (R-CONF-3). `ilpp_` — synthetic-principal provisioning credential (R-CONF-6). *[NEW 0.0.2]* Session cookie names are implementation-specific.
 
 ---
 
@@ -1885,14 +1915,14 @@ The statuses of new codes are [DRAFT].
 
 | ID | Issue | Target |
 |---|---|---|
-| OI-1 | Import the baseline schemas into `specifications/schemas/`, and add new schemas: `authorization-grant`, `revocation-record`, `peer-record`, `directory-entry`, `join-request`, `attestation`, `evidence-packet-manifest`, `test-result`. Publish a release manifest with SHA-256 for each. | 0.0.x |
-| OI-2 | Update schemas: discovery (`spec_versions`, `profiles`, `software.build`, `deployment_id`, `current_event`, `revocation_bound_s`, `conformance`, `x_` members); receipt (`authorization_grant`); export manifest. | 0.0.x |
+| OI-1 | **Resolved in 0.0.2.** Import the baseline schemas into `specifications/schemas/`, and add new schemas: `authorization-grant`, `revocation-record`, `peer-record`, `directory-entry`, `join-request`, `attestation`, `evidence-packet-manifest`, `test-result`. Publish a release manifest with SHA-256 for each. | 0.0.x |
+| OI-2 | **Resolved in 0.0.2.** Update schemas: discovery (`spec_versions`, `profiles`, `software.build`, `deployment_id`, `current_event`, `revocation_bound_s`, `conformance`, `x_` members); receipt (`authorization_grant`); export manifest. | 0.0.x |
 | OI-3 | Should RFC 9421 request signing remain REQUIRED for peer-only endpoints, now that revocation records are signed objects? | before 0.1.0 |
 | OI-4 | ~~Bring the PC companion documents onto this version line.~~ **Resolved 2026-09-27 (principal decision):** all artifacts align on `0.1` at `0.1.0` (see K-16 and §1.2). Remaining mechanical step: add version headers to the drafts when `0.1.0` is cut. | 0.1.0 |
 | OI-5 | Grants for local participants. Timeline to REQUIRED (planned 0.4.0) and migration. | 0.4.0 |
 | OI-6 | Delegation: `parent_grant` chains, attenuation, agent-to-sub-agent delegation; sender-constrained credentials (e.g. DPoP). | 0.3.0+ |
 | OI-7 | Finalize the mandate vocabulary. Add a bounded-discretion value? Ratify the Alpha mapping. Should grants be allowed to restrict mandates by default? | 0.1.0 |
-| OI-8 | Normative test vectors: format and location. Confirm error-precedence steps 8–11 and the sub-code parent codes against the reference implementation. | 0.1.0 |
+| OI-8 | *Format and location resolved in 0.0.2 (`vectors/`).* Normative test vectors: format and location. Confirm error-precedence steps 8–11 and the sub-code parent codes against the reference implementation. *Observation (0.0.2, SCR-5 filed, not accepted): Interlateral Platform Beta at `2a0b39d` reports role (8), then payload schema (9), then consent (11), then phase (7), then pack rules (9), then caps (10). The specified order stands. Profile `pc-0.1-s1` tests only the step 1/3/4a/4–6 boundaries and the 6-before-7 boundary (PC-CORE-4), so the relative order of steps 7–11 is not yet a conformance requirement.* | 0.1.0 |
 | OI-9 | Companion pack specifications for `unconference@1.1`, `parliamentary@1.1`, `meeting-simple@1.0`, reconciled with the baseline 1.0 documents (K-22). | 0.4.0 |
 | OI-10 | Evidence packet and attestation formats; export manifest members for grants, revocations, and claims. | 0.2.0 |
 | OI-11 | Normative text for role profiles and certification levels. | 0.3.0 |

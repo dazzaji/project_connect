@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ilp:schema:join-request:v1",
+  "title": "ILP join request status — GET /ilp/v1/events/{event}/join-requests/{id} (§10.4 step 6)",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x_": {}
+  },
+  "required": [
+    "join_request_id",
+    "event",
+    "status",
+    "subject"
+  ],
+  "properties": {
+    "join_request_id": {
+      "type": "string",
+      "pattern": "^ilp:[a-z0-9.-]+:join_request:[A-Za-z0-9-]+$"
+    },
+    "event": {
+      "type": "string",
+      "pattern": "^ilp:[a-z0-9.-]+:event:[A-Za-z0-9-]+$"
+    },
+    "status": {
+      "enum": [
+        "pending",
+        "approved",
+        "rejected"
+      ]
+    },
+    "subject": {
+      "type": "string",
+      "pattern": "^ilp:[a-z0-9.-]+:human:[A-Za-z0-9-]+$"
+    },
+    "participant_token": {
+      "type": "string",
+      "pattern": "^ilpt_[A-Za-z0-9_-]{16,}$",
+      "$comment": "present only when approved"
+    },
+    "grant": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$",
+      "$comment": "the ilp-grant+jwt; present only when approved"
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 500
+    }
+  }
+}

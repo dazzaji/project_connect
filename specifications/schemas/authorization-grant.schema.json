@@ -1,0 +1,222 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ilp:schema:authorization-grant:v1",
+  "title": "ILP authorization grant — payload of an ilp-grant+jwt (R-AUTHZ-4)",
+  "$comment": "aud equals iss (a grant is evaluated only by its issuer). nbf ≤ exp; exp bounded by the credential (R-AUTHZ-5).",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x_": {}
+  },
+  "required": [
+    "iss",
+    "aud",
+    "jti",
+    "sub",
+    "agent",
+    "event",
+    "home",
+    "role",
+    "authorization_details",
+    "iat",
+    "nbf",
+    "exp",
+    "credential_binding",
+    "status",
+    "parent_grant"
+  ],
+  "properties": {
+    "iss": {
+      "type": "string",
+      "pattern": "^https?://[a-z0-9.-]+(:[0-9]{1,5})?$",
+      "$comment": "scheme + host [+ port], no path"
+    },
+    "aud": {
+      "type": "string",
+      "pattern": "^https?://[a-z0-9.-]+(:[0-9]{1,5})?$",
+      "$comment": "scheme + host [+ port], no path"
+    },
+    "jti": {
+      "type": "string",
+      "pattern": "^ilp:[a-z0-9.-]+:grant:[A-Za-z0-9-]+$"
+    },
+    "sub": {
+      "type": "string",
+      "pattern": "^ilp:[a-z0-9.-]+:human:[A-Za-z0-9-]+$"
+    },
+    "agent": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^x_": {}
+          },
+          "required": [
+            "id",
+            "license_plate"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^ilp:[a-z0-9.-]+:agent:[A-Za-z0-9-]+$"
+            },
+            "license_plate": {
+              "type": "string",
+              "pattern": "^IL-[A-Z2-9]{8}$"
+            }
+          }
+        }
+      ]
+    },
+    "event": {
+      "type": "string",
+      "pattern": "^ilp:[a-z0-9.-]+:event:[A-Za-z0-9-]+$"
+    },
+    "home": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$",
+      "maxLength": 253
+    },
+    "role": {
+      "type": "string",
+      "minLength": 1
+    },
+    "authorization_details": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "patternProperties": {
+          "^x_": {}
+        },
+        "required": [
+          "type",
+          "pack",
+          "actions"
+        ],
+        "properties": {
+          "type": {
+            "const": "ilp.pack_action"
+          },
+          "pack": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*@[0-9]+\\.[0-9]+$"
+          },
+          "actions": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]+\\.[a-z0-9_.-]+$"
+            }
+          },
+          "limits": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "exclusions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      }
+    },
+    "mandates_allowed": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "human_directed",
+          "human_approved",
+          "standing_instruction",
+          "agent_draft_unaccepted"
+        ]
+      }
+    },
+    "consent": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x_": {}
+      },
+      "required": [
+        "text_version",
+        "text_sha256"
+      ],
+      "properties": {
+        "text_version": {
+          "type": "string"
+        },
+        "text_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "iat": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "nbf": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "exp": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "credential_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x_": {}
+      },
+      "required": [
+        "alg",
+        "value"
+      ],
+      "properties": {
+        "alg": {
+          "const": "S256"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "minLength": 43,
+          "maxLength": 43
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x_": {}
+      },
+      "required": [
+        "uri"
+      ],
+      "properties": {
+        "uri": {
+          "type": "string",
+          "pattern": "^https?://[^\\s]+$"
+        }
+      }
+    },
+    "parent_grant": {
+      "type": "null"
+    }
+  }
+}

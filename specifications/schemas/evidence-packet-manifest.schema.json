@@ -1,0 +1,327 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ilp:schema:evidence-packet-manifest:v1",
+  "title": "Project Connect evidence packet — content manifest (content.json) and envelope manifest (envelope.json)",
+  "$comment": "content_root = SHA-256 of JCS(content.json). Attestations sign content_root. The verifier report is produced outside the packet.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/content"
+    },
+    {
+      "$ref": "#/$defs/envelope"
+    }
+  ],
+  "$defs": {
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x_": {}
+      },
+      "required": [
+        "format",
+        "run_id",
+        "profile",
+        "spec_version",
+        "subjects",
+        "runner",
+        "files",
+        "summary"
+      ],
+      "properties": {
+        "format": {
+          "const": "pc-evidence/1"
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "profile": {
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^x_": {}
+          },
+          "required": [
+            "id",
+            "sha256"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "spec_version": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+        },
+        "subjects": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "patternProperties": {
+              "^x_": {}
+            },
+            "required": [
+              "label",
+              "host",
+              "base_url",
+              "software",
+              "deployment_id",
+              "discovery_sha256",
+              "keys"
+            ],
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "host": {
+                "type": "string",
+                "pattern": "^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$",
+                "maxLength": 253
+              },
+              "base_url": {
+                "type": "string",
+                "pattern": "^https?://[a-z0-9.-]+(:[0-9]{1,5})?$",
+                "$comment": "scheme + host [+ port], no path"
+              },
+              "software": {
+                "type": "object",
+                "additionalProperties": false,
+                "patternProperties": {
+                  "^x_": {}
+                },
+                "required": [
+                  "name",
+                  "version",
+                  "build"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "string"
+                  },
+                  "build": {
+                    "type": "string"
+                  }
+                }
+              },
+              "deployment_id": {
+                "type": "string"
+              },
+              "discovery_sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "keys": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "patternProperties": {
+                    "^x_": {}
+                  },
+                  "required": [
+                    "kid",
+                    "kty",
+                    "crv",
+                    "x",
+                    "use"
+                  ],
+                  "properties": {
+                    "kid": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "kty": {
+                      "const": "OKP"
+                    },
+                    "crv": {
+                      "const": "Ed25519"
+                    },
+                    "x": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_-]+$",
+                      "minLength": 43,
+                      "maxLength": 43
+                    },
+                    "use": {
+                      "const": "sig"
+                    },
+                    "not_after": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "runner": {
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^x_": {}
+          },
+          "required": [
+            "id",
+            "build"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "build": {
+              "type": "string"
+            }
+          }
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "patternProperties": {
+              "^x_": {}
+            },
+            "required": [
+              "path",
+              "sha256",
+              "bytes"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_./-]+$",
+                "not": {
+                  "pattern": "(^|/)\\.\\.(/|$)"
+                }
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "summary": {
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^x_": {}
+          },
+          "required": [
+            "tests",
+            "passed",
+            "failed",
+            "not_applicable"
+          ],
+          "properties": {
+            "tests": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "passed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "failed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "not_applicable": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "envelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x_": {}
+      },
+      "required": [
+        "format",
+        "content_manifest",
+        "content_root",
+        "attestations"
+      ],
+      "properties": {
+        "format": {
+          "const": "pc-evidence-envelope/1"
+        },
+        "content_manifest": {
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^x_": {}
+          },
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "properties": {
+            "path": {
+              "const": "content.json"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "content_root": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "attestations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "patternProperties": {
+              "^x_": {}
+            },
+            "required": [
+              "path",
+              "sha256",
+              "signer"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "signer": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

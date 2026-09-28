@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ilp:schema:problem:v2",
+  "title": "ILP problem document (RFC 9457 profile, R-CORE-9, R-CORE-9a)",
+  "type": "object",
+  "required": [
+    "type",
+    "title",
+    "status"
+  ],
+  "properties": {
+    "type": {
+      "type": "string",
+      "pattern": "^urn:ilp:error:[A-Z0-9_]+$"
+    },
+    "title": {
+      "type": "string",
+      "pattern": "^[A-Z0-9_]+$"
+    },
+    "status": {
+      "type": "integer",
+      "minimum": 400,
+      "maximum": 599
+    },
+    "detail": {
+      "type": "string"
+    },
+    "instance": {
+      "type": "string"
+    },
+    "code_detail": {
+      "type": "string",
+      "pattern": "^[A-Z0-9_]+$"
+    },
+    "recovery": {
+      "type": "string"
+    },
+    "retry_after": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": true,
+  "$comment": "`title` equals the code in `type`, and `status` equals the HTTP status (semantic rules). Recovery-context members are open (R-CORE-10)."
+}
