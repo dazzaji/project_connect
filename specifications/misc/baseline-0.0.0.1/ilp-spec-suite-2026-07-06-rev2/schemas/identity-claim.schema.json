@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ilp:schema:identity-claim:v1",
+  "title": "ILP Identity Claim — EdDSA JWT payload (R-ID-17)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["iss", "sub", "aud", "exp", "iat", "jti", "display_name", "verified", "purpose", "event"],
+  "properties": {
+    "iss": { "type": "string", "format": "uri", "$comment": "home instance base URL; must match an active peer" },
+    "sub": { "$ref": "#/$defs/globalId", "$comment": "home-instance human global id" },
+    "aud": { "type": "string", "format": "uri", "$comment": "host instance base URL" },
+    "exp": { "type": "integer", "$comment": "unix seconds; iat + <= 24h" },
+    "iat": { "type": "integer" },
+    "jti": { "type": "string", "$comment": "single-use; replay-rejected by host (CLAIM_REPLAYED)" },
+    "display_name": { "type": "string", "maxLength": 200 },
+    "verified": { "type": "boolean" },
+    "verified_method": { "type": ["string", "null"] },
+    "agent": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["id", "display_name", "license_plate"],
+      "properties": {
+        "id": { "$ref": "#/$defs/globalId" },
+        "display_name": { "type": "string" },
+        "license_plate": { "type": "string", "pattern": "^IL-[A-Z2-9]{8}$" }
+      }
+    },
+    "purpose": { "const": "event_join" },
+    "event": { "$ref": "#/$defs/globalId", "$comment": "the host's event this claim targets" },
+    "consent_accepted": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string" },
+        "text_version": { "type": "string" },
+        "text_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      },
+      "$comment": "host consent text the subject accepted at claim time (T-FED-9)"
+    }
+  },
+  "$defs": {
+    "globalId": { "type": "string", "pattern": "^ilp:[a-z0-9.-]+:[a-z_]+:[A-Za-z0-9-]+$" }
+  },
+  "$comment": "PRIVACY (R-SEC-19): the claim carries NO email address and no data beyond this schema. JOSE header: {alg: EdDSA, kid: <home kid>}."
+}

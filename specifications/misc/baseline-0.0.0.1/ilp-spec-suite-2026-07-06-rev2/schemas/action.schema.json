@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ilp:schema:action:v1",
+  "title": "ILP Action — submission envelope and stored record",
+  "$defs": {
+    "globalId": { "type": "string", "pattern": "^ilp:[a-z0-9.-]+:[a-z_]+:[A-Za-z0-9-]+$" },
+    "mandate": { "enum": ["human_directed", "human_approved", "standing_instruction", "agent_draft_unaccepted"] },
+    "submission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "payload"],
+      "properties": {
+        "kind": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*\\.[a-z][a-z0-9_]*$" },
+        "payload": { "type": "object", "$comment": "validated against the pack action type's payload_schema" },
+        "target_action": { "type": ["string", "null"], "$comment": "action id this targets (vote→entry, second→motion, …)" },
+        "expect_phase": { "type": ["string", "null"], "$comment": "R-CORE-17 precondition; PHASE_MISMATCH on conflict" },
+        "mandate": { "$ref": "#/$defs/mandate", "default": "human_directed" },
+        "intent": { "type": ["string", "null"], "maxLength": 500 }
+      }
+    },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "event", "round", "seq", "kind", "payload", "actor", "created_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/globalId" },
+        "event": { "$ref": "#/$defs/globalId" },
+        "round": { "type": "integer", "minimum": 1 },
+        "seq": { "type": "integer", "minimum": 1 },
+        "kind": { "type": "string" },
+        "payload": { "type": "object" },
+        "target_action": { "oneOf": [ { "$ref": "#/$defs/globalId" }, { "type": "null" } ] },
+        "actor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["human"],
+          "properties": {
+            "human": { "$ref": "#/$defs/globalId", "$comment": "home-origin global id for remote participants (R-CORE-25)" },
+            "agent": { "oneOf": [ { "$ref": "#/$defs/globalId" }, { "type": "null" } ] },
+            "license_plate": { "type": ["string", "null"], "pattern": "^IL-[A-Z2-9]{8}$" },
+            "display_name": { "type": "string" },
+            "verified": { "type": "boolean" },
+            "origin_host": { "type": ["string", "null"], "$comment": "null for local participants" }
+          }
+        },
+        "mandate": { "$ref": "#/$defs/mandate" },
+        "state": { "enum": ["open", "superseded", "dead", "withdrawn"], "default": "open", "$comment": "pack-interpreted lifecycle state" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "receipt": { "oneOf": [ { "$ref": "#/$defs/globalId" }, { "type": "null" } ] }
+      }
+    }
+  },
+  "oneOf": [ { "$ref": "#/$defs/submission" }, { "$ref": "#/$defs/record" } ]
+}

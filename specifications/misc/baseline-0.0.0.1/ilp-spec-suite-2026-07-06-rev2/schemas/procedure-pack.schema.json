@@ -1,0 +1,513 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ilp:schema:procedure-pack:v1",
+  "title": "ILP Procedure Pack bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "version",
+    "action_types",
+    "roles",
+    "phase_graph",
+    "decision_procedures",
+    "params_schema"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]*$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "params_schema": {
+      "$comment": "JSON Schema for event-definition params",
+      "type": "object"
+    },
+    "roles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,39}$"
+          },
+          "singleton": {
+            "type": "boolean",
+            "default": false
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "action_types": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "payload_schema",
+          "roles",
+          "phases"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]*\\.[a-z][a-z0-9_]*$"
+          },
+          "payload_schema": {
+            "type": "object"
+          },
+          "max_payload_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 32768
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "phases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "target_kind": {
+            "oneOf": [
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1
+              }
+            ],
+            "$comment": "action kind(s) this action may target; array = any of (UG-4 D-7, enables ballotable amendments generically)"
+          },
+          "cap": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "default": null,
+            "additionalProperties": false,
+            "properties": {
+              "per": {
+                "enum": [
+                  "human",
+                  "registration"
+                ]
+              },
+              "count": {
+                "oneOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  {
+                    "type": "string",
+                    "$comment": "param reference, e.g. params.max_votes_per_participant"
+                  }
+                ]
+              },
+              "scope": {
+                "enum": [
+                  "round",
+                  "event"
+                ],
+                "default": "round"
+              }
+            }
+          },
+          "rules": {
+            "type": "object",
+            "additionalProperties": false,
+            "$comment": "declarative action-state rules interpreted generically by the engine (R-EV-5); no pack-specific engine code",
+            "properties": {
+              "sets_self_state": {
+                "type": "string",
+                "$comment": "initial state for this action (default 'open'), e.g. a motion starts 'moved'"
+              },
+              "requires_target_state": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "$comment": "target must be in one of these states"
+              },
+              "sets_target_state": {
+                "type": "string",
+                "$comment": "set the target action's state after this action (e.g. second → 'debating')"
+              },
+              "target_author": {
+                "enum": [
+                  "any",
+                  "self",
+                  "other"
+                ],
+                "default": "any"
+              },
+              "state_setter_author": {
+                "enum": [
+                  "any",
+                  "other"
+                ],
+                "default": "any",
+                "$comment": "second-style guard: the actor must differ from the author of the latest action that set the target's CURRENT state (the mover of the pending motion) — not from the target's own author"
+              },
+              "one_per_target": {
+                "type": "boolean",
+                "default": false,
+                "$comment": "at most one such action per target across all actors (e.g. one second per motion)"
+              },
+              "allow_multiple_per_target": {
+                "type": "boolean",
+                "default": false,
+                "$comment": "permit repeats per (human, target), e.g. change-vote; decision dedups by last"
+              },
+              "max_open_per_round": {
+                "type": "integer",
+                "minimum": 1,
+                "$comment": "at most N open actions of this kind per round (e.g. single active main motion)"
+              },
+              "once_per_round": {
+                "type": "boolean",
+                "$comment": "UF-2: per-human idempotency for untargeted actions — a repeat submit in the same round returns the original action as a duplicate (e.g. check-in)"
+              },
+              "unique_target_state": {
+                "type": "boolean",
+                "$comment": "S-6 generic: reject if ANY other card already occupies the state this action sets (<=1 current-question invariant)"
+              },
+              "no_open_children": {
+                "type": "boolean",
+                "$comment": "S-6 generic: reject if the target has non-terminal child cards (a pending amendment IS the current question)"
+              },
+              "requires_param": {
+                "type": "string",
+                "$comment": "S-6 generic: action exists only when this round param is truthy (feature-flagged actions, e.g. amendments)"
+              }
+            }
+          },
+          "triggers_decision": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "decision",
+              "scope"
+            ],
+            "$comment": "an action (e.g. chair close_ballot) runs a named decision scoped to its target and sets the target state per outcome",
+            "properties": {
+              "decision": {
+                "type": "string"
+              },
+              "scope": {
+                "enum": [
+                  "target"
+                ]
+              },
+              "outcomes": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "pass": {
+                    "type": "object",
+                    "properties": {
+                      "set_target_state": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "fail": {
+                    "type": "object",
+                    "properties": {
+                      "set_target_state": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "phase_graph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entry",
+        "phases"
+      ],
+      "properties": {
+        "entry": {
+          "type": "string"
+        },
+        "grace_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 30
+        },
+        "phases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "transitions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "to",
+                    "gates"
+                  ],
+                  "properties": {
+                    "to": {
+                      "type": "string"
+                    },
+                    "gates": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "kind"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "enum": [
+                              "operator",
+                              "timer",
+                              "count",
+                              "decision"
+                            ]
+                          },
+                          "deadline_param": {
+                            "type": "string"
+                          },
+                          "predicate": {
+                            "type": "string",
+                            "$comment": "closed expression, e.g. actions(unconference.proposal) >= 1"
+                          },
+                          "decision": {
+                            "type": "string",
+                            "$comment": "decision_procedures[].name whose result selects `to`"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "decision_procedures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "procedure"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "procedure": {
+            "enum": [
+              "top_n",
+              "threshold",
+              "count"
+            ]
+          },
+          "params": {
+            "type": "object",
+            "$comment": "operator args, may reference event params; see ILP-EVENT R-EV-8"
+          }
+        }
+      }
+    },
+    "artifact_bindings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "on",
+          "role"
+        ],
+        "properties": {
+          "on": {
+            "type": "string",
+            "$comment": "phase entry or decision name, e.g. phase:complete or decision:select_winners"
+          },
+          "role": {
+            "type": "string",
+            "$comment": "artifact role, e.g. winner_doc, minutes, resolution"
+          },
+          "per_result": {
+            "type": "boolean",
+            "default": false
+          },
+          "template": {
+            "type": "string",
+            "$comment": "markdown template with substitution slots"
+          },
+          "required_snapshot_to_close": {
+            "type": "boolean",
+            "default": false
+          },
+          "title_template": {
+            "type": "string"
+          },
+          "when": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "target_kind": {
+                "type": "string"
+              }
+            },
+            "$comment": "declarative filter: binding fires only when the decision's target action is of this kind (UG-4 D-7)"
+          },
+          "generate": {
+            "enum": [
+              "round_record"
+            ],
+            "$comment": "UF1-1: engine-generated content — fills/creates the bound artifact from the round's own record (roll/proceedings/resolutions/adjournment) when the declared phase is entered"
+          },
+          "writable_phases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "$comment": "S-3 generic: phases during which this bound document accepts writes (absent = any phase until frozen)"
+          },
+          "phase_writers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "$comment": "S-3 generic: per-phase role allowlist for writes (e.g. synthesis → [synthesizer]) — one set of hands"
+          }
+        }
+      }
+    },
+    "surface_templates": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "skill_markdown": {
+          "type": "string"
+        },
+        "ui_labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "primary_cap": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "$comment": "action kind whose per-participant cap surfaces as my.votes_remaining; null/absent = no headline cap (e.g. parliamentary)"
+        },
+        "event_home_block_schema": {
+          "type": "object",
+          "$comment": "JSON Schema of the pack block in Event Home"
+        },
+        "action_labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "$comment": "optional human label per action kind for generic UIs (D-1/UG-1); fallback = humanized kind suffix"
+        },
+        "status_labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "$comment": "S-6 generic: user-facing labels for EVENT statuses (draft/open/live/closed) — e.g. Setup/Registration/In meeting/Completed; UI leads with these, protocol status stays diagnostic"
+        },
+        "note_kinds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "$comment": "R-33/PM-09: action kinds rendered on the event page/live view as a NOTES strip (record-visible annotations without board lanes, e.g. clerk notes)"
+        }
+      }
+    },
+    "default_role": {
+      "type": "string",
+      "$comment": "cohort role granted to a participant at registration (default participant); packs like parliamentary use member"
+    },
+    "terminal_states": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "$comment": "action states considered resolved/closed; excluded from max_open_per_round active counts (generic)"
+    },
+    "on_close_state": {
+      "type": "string",
+      "$comment": "S-6 generic: at terminal close, undisposed cards (non-terminal states) are set to this state by the engine (auto-disposition; must itself be a terminal_states member)"
+    },
+    "advanced": {
+      "type": "boolean",
+      "$comment": "S-6/KP-2: advanced packs stay in the registry/API but are hidden from the default create-event pickers"
+    },
+    "current_states": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "$comment": "S-6 generic: the state GROUP constituting 'the current question' — unique_target_state enforces exclusivity across this whole group (target + parent + children exempt as one unit of business); absent = exact-state semantics"
+    }
+  }
+}

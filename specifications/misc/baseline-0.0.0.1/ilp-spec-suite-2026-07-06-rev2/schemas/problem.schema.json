@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ilp:schema:problem:v1",
+  "title": "ILP error problem document (RFC 9457 profile, R-CORE-9)",
+  "type": "object",
+  "required": ["type", "title", "status"],
+  "properties": {
+    "type": { "type": "string", "pattern": "^urn:ilp:error:[A-Z0-9_]+$" },
+    "title": { "type": "string" },
+    "status": { "type": "integer", "minimum": 400, "maximum": 599 },
+    "detail": { "type": "string" },
+    "instance": { "type": "string" },
+    "current_rev": { "type": "integer", "$comment": "STALE_BASE" },
+    "changes_url": { "type": "string", "$comment": "STALE_BASE" },
+    "current_phase": { "type": "string", "$comment": "PHASE_MISMATCH" },
+    "phase_changed_at": { "type": "string", "format": "date-time", "$comment": "PHASE_MISMATCH" },
+    "cap": { "type": "integer", "$comment": "VOTE_CAP_EXCEEDED and cap-family codes" },
+    "votes_remaining": { "type": "integer", "$comment": "VOTE_CAP_EXCEEDED" },
+    "limit_bytes": { "type": "integer", "$comment": "413 size-limit codes (R-CORE-4)" },
+    "expires_at": { "type": "string", "format": "date-time", "$comment": "AUTH_EXPIRED" },
+    "consent": {
+      "type": "object", "$comment": "CONSENT_REQUIRED",
+      "properties": {
+        "kind": { "type": "string" },
+        "text_version": { "type": "string" },
+        "text_url": { "type": "string" }
+      }
+    },
+    "retry_after": { "type": "integer", "$comment": "RATE_LIMITED (seconds)" }
+  },
+  "additionalProperties": true,
+  "$comment": "additionalProperties true: codes may add recovery-context extensions, all documented in the OpenAPI error registry (R-CORE-9/10)."
+}

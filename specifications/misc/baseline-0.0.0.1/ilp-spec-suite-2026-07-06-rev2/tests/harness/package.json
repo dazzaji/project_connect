@@ -1,0 +1,13 @@
+{
+  "name": "ilp-conformance-harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node run.mjs --env single",
+    "test:duo": "node run.mjs --env duo",
+    "matrix": "node run.mjs --matrix"
+  },
+  "dependencies": {}
+}
