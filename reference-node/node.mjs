@@ -184,7 +184,8 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
     const p = {
       // re-adding a suspended peer refreshes discovery but never lifts the suspension (only reinstate does)
       host: peerHost, base_url: peerBase, state: existing?.state === "suspended" ? "suspended" : "active", discovery: doc, keys: doc.keys, spec_versions: doc.spec_versions,
-      updated_at: iso(), last_good_refresh_ms: existing?.last_good_refresh_ms ?? 0, last_seq: existing?.last_seq ?? 0, revoked: existing?.revoked ?? new Set(),
+      // a (re-)added peer is read from the start of its feed and is not fresh until that read completes
+      updated_at: iso(), last_good_refresh_ms: 0, last_seq: 0, revoked: existing?.revoked ?? new Set(),
       bound_s: doc.federation.revocation_bound_s,
     };
     peers.set(peerHost, p);
@@ -228,6 +229,8 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
     for (let page = 0; page < 1000; page++) {
       const feed = await fetchJson(`${p.base_url}/ilp/v1/federation/revocations?since=${since}`);
       if (!validate("revocation-feed", feed).ok) throw new Error(`malformed revocation feed from ${p.host}`);
+      // a feed behind what was already consumed has been reset or replaced: its state is unknown (fail closed, R-FED-21)
+      if (feed.latest_seq < since) throw new Error(`revocation feed from ${p.host} went backwards (latest_seq ${feed.latest_seq} < consumed ${since})`);
       latest = feed.latest_seq;
       for (const item of feed.items) {
         let payload;

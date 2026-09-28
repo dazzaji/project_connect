@@ -39,7 +39,8 @@ export function adapter(node, { harness }) {
     },
     async setPhase(ev, phase) {
       if (isRef) return http("POST", `${node.base}/ilp/v1/admin/events/${ev.id}/state`, { bearer: node.admin, body: { phase } });
-      return control(harness, "/setup/phase", { node: node.name, slug: ev.slug, body: { to: phase } });
+      // Beta advances along its phase graph one step at a time (e.g. proposing → voting); the target phase is checked by the caller
+      return control(harness, "/setup/phase", { node: node.name, slug: ev.slug, body: {} });
     },
     async close(ev) {
       if (isRef) return http("POST", `${node.base}/ilp/v1/admin/events/${ev.id}/state`, { bearer: node.admin, body: { status: "closed" } });

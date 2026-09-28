@@ -29,8 +29,8 @@ for (const [a, b] of [[beta, aux], [aux, beta], [ref, aux], [aux, ref]]) await p
 const auxProv = await aux.credential("provisioning");
 
 // admit a fresh aux-homed synthetic subject to a new event on `host`
-async function admitted(host, tag, { approve = true } = {}) {
-  const ev = await host.createEvent({ slug: `reg-${tag}-${Date.now().toString(36)}` });
+async function admitted(host, tag, { approve = true, ...spec } = {}) {
+  const ev = await host.createEvent({ slug: `reg-${tag}-${Date.now().toString(36)}`, ...spec });
   const op = await host.credential("operator", ev.id);
   const syn = expectOk(await http("POST", `${aux.base}/ilp/v1/admin/synthetic/humans`, { bearer: auxProv, body: { display_name: `Reg ${tag}`, agent_display_name: `Reg agent ${tag}` } }), 201, "synthetic");
   const claim = expectOk(await http("POST", `${aux.base}/ilp/v1/claims`, { bearer: auxProv, body: { purpose: "event_join", event: ev.global_id, aud: host.base, agent: syn.agent.id, on_behalf_of: syn.human } }), 201, "claim").claim;
@@ -198,13 +198,50 @@ const PROBES = {
   },
   // step 9: an unknown vote target is VALIDATION_FAILED, not NOT_FOUND (SG2R3-TARGET-404)
   async "SG2R3-TARGET-404"(host) {
-    const a = await admitted(host, "t404");
+    const a = await admitted(host, "t404", { grant_actions: ["unconference.proposal", "unconference.vote"], grant_exclusions: [] });
     const tok = (await retrieve(host, a)).json.participant_token;
+    // Beta's gate needs one proposal before voting opens; a vote in the wrong phase would report PHASE_MISMATCH, not VALIDATION_FAILED
+    expectOk(await http("POST", `${host.base}/ilp/v1/events/${a.ev.id}/actions`, { bearer: tok, body: { kind: "unconference.proposal", payload: { title: "gate", content: "x" } } }), 201, "proposal");
     await host.setPhase(a.ev, "voting");
     const before = await observe(host, a.ev.id);
     expectProblem(await http("POST", `${host.base}/ilp/v1/events/${a.ev.id}/actions`, { bearer: tok, body: { kind: "unconference.vote", payload: {}, target_action: "00000000-0000-7000-8000-000000000077" } }), "VALIDATION_FAILED", "vote on an unknown target");
     await expectNoSideEffects(host, a.ev.id, before, "unknown target");
     return { reported: "VALIDATION_FAILED" };
+  },
+  // a home whose revocation feed resets (latest_seq behind what was consumed) is not fresh: no first delivery (SG2R3-W-FEED-RESET, writer-found)
+  async "SG2R3-W-FEED-RESET"(host) {
+    const name = `pc-rst${host.name === "beta-one" ? "b" : "r"}`;
+    let n = await startReferenceNode({ name, port: 4195, work });
+    try {
+      const rst = adapter(n, { harness });
+      const prov = await rst.credential("provisioning");
+      // advance the home's feed before peering, so the host's initial read consumes through seq 3
+      for (let i = 0; i < 3; i++) {
+        const s = expectOk(await http("POST", `${rst.base}/ilp/v1/admin/synthetic/humans`, { bearer: prov, body: { display_name: `Seed ${i}` } }), 201, "seed");
+        await http("POST", `${rst.base}/ilp/v1/admin/synthetic/humans/${local(s.human)}/revoke`, { bearer: prov, body: {} });
+      }
+      const rstPeering = await rst.credential("peering");
+      expectOk(await http("POST", `${host.base}/ilp/v1/federation/peers`, { bearer: peering[host.name], body: { base_url: rst.base } }), [200, 201], "host→rst");
+      expectOk(await http("POST", `${rst.base}/ilp/v1/federation/peers`, { bearer: rstPeering, body: { base_url: host.base } }), [200, 201], "rst→host");
+      const ev = await host.createEvent({ slug: `reg-rst-${Date.now().toString(36)}` });
+      const op = await host.credential("operator", ev.id);
+      const syn = expectOk(await http("POST", `${rst.base}/ilp/v1/admin/synthetic/humans`, { bearer: prov, body: { display_name: "Reset subject" } }), 201, "synthetic");
+      const claim = expectOk(await http("POST", `${rst.base}/ilp/v1/claims`, { bearer: prov, body: { purpose: "event_join", event: ev.global_id, aud: host.base, agent: null, on_behalf_of: syn.human } }), 201, "claim").claim;
+      const j = expectOk(await http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests`, { body: { claim } }), 202, "join");
+      expectOk(await http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests/${local(j.join_request_id)}/approve`, { bearer: op, body: {} }), 200, "approve");
+      // the home restarts with an empty feed (same keys): whatever it revokes next is invisible to a cursor at 3
+      n.stop();
+      await sleep(500);
+      n = await startReferenceNode({ name, port: 4195, work });
+      const bound = (await http("GET", `${host.base}/.well-known/interlateral.json`)).json.federation.revocation_bound_s;
+      await sleep((2 * bound + 5) * 1000);
+      const r = await http("GET", `${host.base}/ilp/v1/events/${ev.id}/join-requests/${local(j.join_request_id)}`, { bearer: j.retrieval_key });
+      check(!r.json?.participant_token, "a token was delivered while the home's revocation feed had gone backwards");
+      expectProblem(r, "REVOCATION_STATE_UNKNOWN", "retrieval after the home's feed reset");
+      return { waited_s: 2 * bound + 5, reported: "REVOCATION_STATE_UNKNOWN" };
+    } finally {
+      n.stop();
+    }
   },
   // an Idempotency-Key is per principal: another principal's identical key is a new request (SG2R3-IDEM-SCOPE)
   async "SG2R3-IDEM-SCOPE"(host) {
