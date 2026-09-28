@@ -63,9 +63,10 @@ export function expectOk(res, status, what) {
 }
 
 /** Observables for no-side-effect checks (profile.no_side_effect_observables). */
-export async function observe(node, eventRef) {
-  const feed = await http("GET", `${node.base}/ilp/v1/events/${eventRef}/feed?since=0`);
-  const rc = await http("GET", `${node.base}/ilp/v1/events/${eventRef}/receipts`);
+// `bearer` (optional) observes a private event through a credential that may see it (its operator's)
+export async function observe(node, eventRef, bearer = null) {
+  const feed = await http("GET", `${node.base}/ilp/v1/events/${eventRef}/feed?since=0`, bearer ? { bearer } : {});
+  const rc = await http("GET", `${node.base}/ilp/v1/events/${eventRef}/receipts`, bearer ? { bearer } : {});
   // an observation that cannot be made fails the test; it never compares as "unchanged"
   check(feed.status === 200 && Array.isArray(feed.json?.items) && Number.isInteger(feed.json?.latest_seq), `observe ${node.name} feed: HTTP ${feed.status}`);
   check(rc.status === 200 && Array.isArray(rc.json?.items), `observe ${node.name} receipts: HTTP ${rc.status}`);
@@ -79,8 +80,8 @@ export async function observe(node, eventRef) {
     head: rc.json?.items?.at(-1)?.hash ?? null,
   };
 }
-export async function expectNoSideEffects(node, eventRef, before, what) {
-  const after = await observe(node, eventRef);
+export async function expectNoSideEffects(node, eventRef, before, what, bearer = null) {
+  const after = await observe(node, eventRef, bearer);
   check(JSON.stringify(after) === JSON.stringify(before), `${what}: side effects observed ${JSON.stringify(before)} → ${JSON.stringify(after)}`);
 }
 

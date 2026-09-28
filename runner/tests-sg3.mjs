@@ -180,9 +180,12 @@ export const SG3_TESTS = {
     for (const g of hidden) check(!d.items.some((x) => x.global_id === g) && !agg.items.some((x) => x.global_id === g), `control event ${g} crossed the boundary`);
     // SCR-9: the private control event is invisible to an unauthenticated caller
     const P = ctx.events.E_private;
+    // the rejected probes must also leave the private event unchanged, observed through its operator (SG2V1-RUNNER-SIDE-EFFECT)
+    const before = await observe(ctx.host, P.id, ctx.creds.operator.E_private);
     expectProblem(await http("GET", `${ctx.host.base}/ilp/v1/events/${P.id}/feed?since=0`), "NOT_FOUND", "private event feed");
     expectProblem(await http("GET", `${ctx.host.base}/ilp/v1/events/${P.id}/receipts`), "NOT_FOUND", "private event receipts");
     expectProblem(await http("POST", `${ctx.host.base}/ilp/v1/events/${P.id}/join-requests`, { body: {} }), "NOT_FOUND", "join to a private event");
+    await expectNoSideEffects(ctx.host, P.id, before, "rejected private-event probes", ctx.creds.operator.E_private);
     // ...and IS visible to its own participant and its operator (R-CORE-24: visibility follows the event, not "nobody")
     expectOk(await http("GET", `${ctx.host.base}/ilp/v1/events/${P.id}/feed?since=0`, { bearer: ctx.privLocal.participant_token }), 200, "private feed to its own participant");
     expectOk(await http("GET", `${ctx.host.base}/ilp/v1/events/${P.id}/receipts`, { bearer: ctx.creds.operator.E_private }), 200, "private receipts to its operator");
