@@ -1,6 +1,6 @@
 // Project Connect reference node — written from ILP 0.0.2, independently of any implementation under test.
 // Plays both the Identity Home and the Context Host roles for profile pc-0.1-s1. State is in memory.
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { canonicalBytes } from "../lib/jcs.mjs";
 import { decodeJws, JwsError, sha256B64u, sha256Hex, signDetached, signJws, TYP, verifyJws } from "../lib/jws.mjs";
 import { GENESIS_HASH, receiptHash } from "../lib/receipt.mjs";
@@ -11,10 +11,27 @@ const SPEC_VERSIONS = ["0.0.2"];
 const SKEW_S = 300;
 const nowS = () => Math.floor(Date.now() / 1000);
 const iso = (ms = Date.now()) => new Date(ms).toISOString();
-const tokenHash = (t) => sha256Hex(Buffer.from(t, "utf8"));
+// R-CORE-18: tokens are held only as salted verifiers, found by a public lookup prefix (all but the last 32
+// characters: prefix + 11 random chars); the remaining 192 random bits never rest anywhere.
+const SECRET_TAIL = 32;
+const lookupOf = (t) => (typeof t === "string" && t.length >= SECRET_TAIL + 8 ? t.slice(0, -SECRET_TAIL) : null);
+const saltedDigest = (salt, t) => createHash("sha256").update(`${salt}\u0000${t}`, "utf8").digest();
+function verifier(t) {
+  const salt = randomBytes(16).toString("hex");
+  return { lookup: lookupOf(t), salt, digest: saltedDigest(salt, t) };
+}
+const verifies = (t, v) => !!v && typeof t === "string" && timingSafeEqual(saltedDigest(v.salt, t), v.digest);
+/** the record stored under the token's lookup prefix, when the token matches its salted verifier */
+function findSecret(map, t) {
+  const r = map.get(lookupOf(t));
+  return r && verifies(t, r.verifier) ? r : null;
+}
 const random = (prefix) => prefix + randomBytes(32).toString("base64url");
 const hostOf = (baseUrl) => new URL(baseUrl).hostname;
 const hostOfGid = (gid) => gid.split(":")[1];
+// the identity claim's consent_accepted shape, also required of a join body's own consent_accepted (ASTRA-R3-02)
+const validConsent = (c) => c === null || (typeof c === "object" && !Array.isArray(c) && Object.keys(c).every((k) => ["kind", "text_version", "text_sha256"].includes(k))
+  && typeof c.kind === "string" && typeof c.text_version === "string" && typeof c.text_sha256 === "string" && /^[0-9a-f]{64}$/.test(c.text_sha256));
 
 const PACK = "unconference@1.1";
 const ACTIONS = {
@@ -24,6 +41,7 @@ const ACTIONS = {
     max_payload_bytes: 32768,
     validate: (p) => p && typeof p.title === "string" && p.title.length >= 1 && p.title.length <= 300 && typeof p.content === "string" && p.content.length >= 1 && p.content.length <= 10000 && Object.keys(p).every((k) => ["title", "content"].includes(k)),
     cap: 3,
+    natural_key: "title", // R-UNCONF-1: duplicates by (author, title) are rejected idempotently
   },
   "unconference.vote": {
     phases: ["voting"],
@@ -43,13 +61,13 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
   const ownKey = (kid) => publicKeys.find((k) => k.kid === kid) ?? null;
 
   // ---- state ----
-  const credentials = new Map(); // hash -> {kind, event?}
+  const credentials = new Map(); // lookup prefix -> {verifier, kind, event?}
   const humans = new Map(); // gid -> {gid, display_name, synthetic, revoked}
   const agents = new Map(); // gid -> {gid, human, display_name, plate, revoked}
   const peers = new Map(); // host -> {host, base_url, state, discovery, keys, spec_versions, updated_at, last_good_refresh_ms, last_seq, revoked:Set}
   const events = new Map(); // id -> event
-  const tokens = new Map(); // hash -> {hash, event, principal, agent, plate, remote, home, expires_s, revoked, grant}
-  const grants = new Map(); // jti -> {jti, jws, payload, status, changed_at, reason, token_hash}
+  const tokens = new Map(); // lookup prefix -> {lookup, verifier, event, principal, agent, plate, remote, home, expires_s, revoked, grant}
+  const grants = new Map(); // jti -> {jti, jws, payload, status, changed_at, reason, token_lookup}
   const seenClaims = new Set();
   const revocationsOut = []; // {seq, jws, payload}
   const joinRequests = new Map(); // gid -> {...}
@@ -60,7 +78,7 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
     const bearer = (headers.authorization ?? "").replace(/^Bearer\s+/i, "");
     if (!bearer) throw new Problem("AUTH_MISSING");
     if (adminToken && bearer === adminToken) return { kind: "admin" };
-    const c = credentials.get(tokenHash(bearer));
+    const c = findSecret(credentials, bearer);
     if (!c) throw new Problem("AUTH_INVALID");
     if (c.revoked) throw new Problem("AUTH_REVOKED");
     if (!kinds.includes(c.kind)) throw new Problem("FORBIDDEN", `credential kind ${c.kind} not permitted`);
@@ -103,9 +121,10 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
     const ev = eventByRef(ref);
     if (ev.visibility !== "private") return ev;
     const bearer = (headers.authorization ?? "").replace(/^Bearer\s+/i, "");
-    const t = bearer ? tokens.get(tokenHash(bearer)) : null;
-    const c = bearer ? credentials.get(tokenHash(bearer)) : null;
-    if ((adminToken && bearer === adminToken) || (t && !t.revoked && t.event === ev.id) || (c && !c.revoked && c.kind === "operator" && c.event === ev.id)) return ev;
+    const t = bearer ? findSecret(tokens, bearer) : null;
+    const c = bearer ? findSecret(credentials, bearer) : null;
+    const liveToken = t && !t.revoked && nowS() <= t.expires_s && t.event === ev.id; // an expired token sees nothing private (ASTRA-R3-03)
+    if ((adminToken && bearer === adminToken) || liveToken || (c && !c.revoked && c.kind === "operator" && c.event === ev.id)) return ev;
     throw new Problem("NOT_FOUND", `event ${ref}`);
   }
 
@@ -300,7 +319,7 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
       parent_grant: null,
     };
     const jws = signJws(payload, key, TYP.grant);
-    const g = { jti: payload.jti, id, jws, payload, status: "active", changed_at: iso(), token_hash: t.hash };
+    const g = { jti: payload.jti, id, jws, payload, status: "active", changed_at: iso(), token_lookup: t.lookup };
     grants.set(payload.jti, g);
     t.grant = payload.jti;
     appendFeed(ev, "grant.issued", payload.jti, "authorization grant issued");
@@ -311,8 +330,9 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
   /** Mint a token: returns the token string once; the node keeps only its hash. */
   function mintToken(ev, { principal, agent, plate, remote, home, claim_jti }) {
     const token = random("ilpt_");
-    const t = { hash: tokenHash(token), event: ev.id, principal, agent, plate, remote, home, claim_jti, expires_s: nowS() + 7 * 86400 + 72 * 3600, revoked: false, grant: null };
-    tokens.set(t.hash, t);
+    const v = verifier(token);
+    const t = { lookup: v.lookup, verifier: v, event: ev.id, principal, agent, plate, remote, home, claim_jti, expires_s: nowS() + 7 * 86400 + 72 * 3600, revoked: false, grant: null };
+    tokens.set(t.lookup, t);
     return { t, token };
   }
 
@@ -345,7 +365,7 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
       }
       throw new Problem("AUTH_INVALID", "credential is not a participant token");
     }
-    const t = tokens.get(tokenHash(bearer));
+    const t = findSecret(tokens, bearer);
     if (!t) throw new Problem("AUTH_INVALID");
     if (t.revoked) throw new Problem("AUTH_REVOKED");
     if (nowS() > t.expires_s) throw new Problem("AUTH_EXPIRED", undefined, { expires_at: iso(t.expires_s * 1000) });
@@ -356,7 +376,8 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
   function grantChecks(ev, t, bearer, headers, kind, mandate) {
     let g;
     const presented = headers["ilp-grant"];
-    if (presented) {
+    // presence, not truthiness: an empty or malformed ILP-Grant is rejected at 4a, never replaced by the stored grant (ASTRA-R3-01)
+    if (presented !== undefined) {
       let decoded;
       try {
         decoded = decodeJws(presented);
@@ -420,7 +441,7 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
       if (ev.visibility === "private") throw new Problem("NOT_FOUND", `event ${ref}`);
       // a known, valid token for another event is not an unknown credential: grant checks run in order (4a–5),
       // for remote tokens always and for local tokens whenever a grant is presented (SG2R2-LOCAL-4A)
-      if (t.remote || headers["ilp-grant"]) {
+      if (t.remote || headers["ilp-grant"] !== undefined) {
         grantChecks(ev, t, bearer, headers, body.kind, mandate);
         throw new Problem("GRANT_EVENT_MISMATCH");
       }
@@ -447,11 +468,16 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
     if (!at.roles.includes(g.payload.role)) throw new Problem("FORBIDDEN", "role");
     // step 9: payload and pack rules
     if (!at.validate(body.payload ?? {})) throw new Problem("VALIDATION_FAILED", "payload invalid for pack action");
+    if (at.natural_key) {
+      // a duplicate by (author, natural key) returns the original result and records nothing (R-UNCONF-1, R-CORE-16)
+      const same = ev.actions.find((a) => a.kind === body.kind && a.subject_human === t.principal && a.payload[at.natural_key] === body.payload[at.natural_key]);
+      if (same) return { ev, t, g, mandate, prior: same.result };
+    }
     let target = null;
     if (at.target) {
       if (!body.target_action) throw new Problem("VALIDATION_FAILED", `${body.kind} requires target_action`);
       target = ev.actions.find((a) => a.id === body.target_action || a.id.endsWith(`:${body.target_action}`));
-      if (!target) throw new Problem("NOT_FOUND", "target action not found");
+      if (!target) throw new Problem("VALIDATION_FAILED", "target_action does not name an action in this event"); // step 9 (SG2R3-TARGET-404)
       if (target.kind !== at.target) throw new Problem("VALIDATION_FAILED", `${body.kind} may only target ${at.target}`);
       if (target.subject_human === t.principal) throw new Problem("FORBIDDEN", "self-action forbidden", { code_detail: "SELF_VOTE_FORBIDDEN" }); // parent per §17.2.2 (dispute SG2R2-SELFVOTE)
       if (ev.actions.some((a) => a.kind === body.kind && a.subject_human === t.principal && a.target === target.id)) throw new Problem("CONFLICT", "already acted on this target", { code_detail: "ALREADY_EXISTS_FOR_TARGET" });
@@ -475,7 +501,8 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
       if (!kinds[body.kind]) throw new Problem("VALIDATION_FAILED", "kind must be operator|peering|provisioning");
       const ev = body.kind === "operator" ? eventByRef(String(body.event ?? "")) : null;
       const token = random(kinds[body.kind]);
-      credentials.set(tokenHash(token), { kind: body.kind, event: ev?.id, revoked: false });
+      const v = verifier(token);
+      credentials.set(v.lookup, { verifier: v, kind: body.kind, event: ev?.id, revoked: false });
       return { status: 201, body: { credential: token, kind: body.kind, event: ev?.gid ?? null } };
     }],
 
@@ -644,6 +671,7 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
       const ev = eventByRef(params.ref);
       if (ev.visibility === "private") throw new Problem("NOT_FOUND", `event ${params.ref}`); // does not exist to a remote requester
       if (typeof body.claim !== "string") throw new Problem("VALIDATION_FAILED", "claim is required");
+      if (body.consent_accepted !== undefined && !validConsent(body.consent_accepted)) throw new Problem("VALIDATION_FAILED", "consent_accepted must be null or {kind, text_version, text_sha256}");
       let decoded;
       try {
         decoded = decodeJws(body.claim);
@@ -718,10 +746,10 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
       const jr = {
         gid: gid("join_request"), event: ev.id, status: "pending", subject: c.sub, agent: c.agent?.id ?? null, plate: c.agent?.license_plate ?? null,
         display_name: c.display_name, home: p.host, claim_jti: c.jti, claim_jws: body.claim, consent: c.consent_accepted ?? body.consent_accepted ?? null,
-        retrieval_hash: null, grant: null, token_delivered: false,
+        retrieval: null, grant: null, token_delivered: false,
       };
       const retrieval = random("ilpr_");
-      jr.retrieval_hash = tokenHash(retrieval);
+      jr.retrieval = verifier(retrieval);
       joinRequests.set(jr.gid, jr);
       ev.registrations.set(c.sub, { status: "pending", remote: true, join_request: jr.gid });
       appendFeed(ev, "join_request.received", jr.gid, "remote join request pending", { home: p.host });
@@ -738,12 +766,14 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
       return { body: { items: [...joinRequests.values()].filter((j) => j.event === ev.id).map((j) => ({ join_request_id: j.gid, status: j.status, subject: j.subject, agent: j.agent, home: j.home, display_name: j.display_name })), next_cursor: null } };
     }],
     ["GET", "/ilp/v1/events/:ref/join-requests/:id", ({ headers, params }) => {
-      const ev = eventByRef(params.ref);
-      const jr = joinRequests.get(params.id) ?? [...joinRequests.values()].find((j) => j.gid.endsWith(`:${params.id}`));
-      if (!jr || jr.event !== ev.id) throw new Problem("NOT_FOUND");
+      // step 1 before step 2: the retrieval key is validated before the event or join request is resolved (SG2R3-JOIN-GET)
       const bearer = (headers.authorization ?? "").replace(/^Bearer\s+/i, "");
       if (!bearer) throw new Problem("AUTH_MISSING");
-      if (tokenHash(bearer) !== jr.retrieval_hash) throw new Problem("AUTH_INVALID");
+      const keyed = [...joinRequests.values()].find((j) => j.retrieval.lookup === lookupOf(bearer) && verifies(bearer, j.retrieval));
+      if (!keyed) throw new Problem("AUTH_INVALID");
+      const ev = eventByRef(params.ref);
+      const jr = joinRequests.get(params.id) ?? [...joinRequests.values()].find((j) => j.gid.endsWith(`:${params.id}`));
+      if (!jr || jr.event !== ev.id || jr !== keyed) throw new Problem("NOT_FOUND");
       const base = { join_request_id: jr.gid, event: ev.gid, status: jr.status, subject: jr.subject };
       if (jr.status !== "approved") return { body: base };
       if (jr.token_delivered) return { body: { ...base, grant: grants.get(jr.grant).jws, token_delivered: true } };
@@ -803,6 +833,7 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
       ev.actions.push(action);
       ev.receipts.push(receipt);
       const result = { id: action.id, seq: feed.seq, kind: body.kind, state: "accepted", duplicate: false };
+      Object.defineProperty(action, "result", { value: result }); // not exported
       if (idem) ev.idempotency.set(`${t.principal}|${idem}`, result);
       return { status: 201, body: result };
     }],
@@ -822,7 +853,7 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
     }],
     ["GET", "/ilp/v1/auth/grant", ({ headers }) => {
       const bearer = (headers.authorization ?? "").replace(/^Bearer\s+/i, "");
-      const t = tokens.get(tokenHash(bearer));
+      const t = findSecret(tokens, bearer);
       if (!t) throw new Problem(bearer ? "AUTH_INVALID" : "AUTH_MISSING");
       if (t.revoked) throw new Problem("AUTH_REVOKED");
       const g = t.grant && grants.get(t.grant);
@@ -830,6 +861,7 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
       return { body: { grant: g.jws, status: g.status } };
     }],
     ["POST", "/ilp/v1/grants/:id/revoke", ({ headers, params, body }) => {
+      requireCredential(headers, ["operator"]); // step 1 before step 2 (SG2R3-REVOKE-PREC)
       const g = grants.get(gid("grant", params.id));
       if (!g) throw new Problem("NOT_FOUND");
       requireCredential(headers, ["operator"], g.payload.event.split(":")[3]);
@@ -840,8 +872,10 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
 
     // export (ilp-export/1 with additive grants, revocations, claims)
     ["POST", "/ilp/v1/events/:ref/exports", ({ headers, params }) => {
+      requireCredential(headers, ["operator"]); // step 1 before step 2 (SG2R3-EXPORT-ORACLE)
       const ev = eventByRef(params.ref);
       requireCredential(headers, ["operator"], ev.id);
+      if (!["closed", "archived"].includes(ev.status)) throw new Problem("VALIDATION_FAILED", "an event is exported only once closed or archived (R-EV-25)", { current_status: ev.status });
       const jsonl = (rows) => rows.map((r) => JSON.stringify(r)).join("\n") + (rows.length ? "\n" : "");
       const evGrants = [...grants.values()].filter((g) => g.payload.event === ev.gid);
       const files = {
@@ -865,7 +899,9 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
     }],
   ];
 
-  return { routes, startPolling, stop: () => clearInterval(pollTimer), discovery, host, baseUrl };
+  // secretsAtRest: in-process tests only (tests/reference-node.test.mjs) — what the node holds for its secrets
+  const secretsAtRest = () => ({ keys: [...tokens.keys(), ...credentials.keys()], records: [...tokens.values(), ...credentials.values(), ...joinRequests.values()] });
+  return { routes, startPolling, stop: () => clearInterval(pollTimer), discovery, host, baseUrl, secretsAtRest };
 }
 
 export const fingerprint = (jwk) => createHash("sha256").update(canonicalBytes({ crv: jwk.crv, kty: jwk.kty, x: jwk.x })).digest("base64url");
