@@ -27,18 +27,18 @@ const tests = [
   // Peering (G2)
   T("PC-PEER-1", "SG-2", "pair", "blocker", "Explicit mutual peering: each admin (or peering credential) adds the other; both peer lists show the other as active with common_spec_versions non-empty", ["R-FED-3", "R-FED-4", "R-FED-15", "R-FED-16"], "active both ways"),
   T("PC-PEER-2", "SG-3", "host", "blocker", "A join request whose claim is issued by a non-peer is rejected with NOT_A_PEER, with no shadow principal created", ["R-FED-3", "R-FED-14"], "NOT_A_PEER"),
-  T("PC-PEER-3", "SG-3", "pair", "major", "Peering state changes (suspend, reinstate) are visible on the public peer list and are published as signed revocation records of kind peer", ["R-FED-3", "R-FED-16"], "state + record"),
+  T("PC-PEER-3", "SG-3", "pair", "major", "Peering state changes (suspend, reinstate) are visible on the public peer list (a suspended peer is listed as suspended) and are published as signed revocation records of kind peer; the reinstatement record carries reinstated: true", ["R-FED-3", "R-FED-3a", "R-FED-4", "R-FED-10a", "R-FED-16"], "state + records"),
   // Directory (G2)
   T("PC-DIR-1", "SG-3", "host", "major", "The host lists its federated event; every entry validates against directory-entry and carries the event's global ID, pack, status, policy, and home", ["R-FED-5", "R-FED-19"], "entry present and valid"),
   T("PC-DIR-2", "SG-3", "host", "blocker", "A private control event and a non-federated control event never appear in the directory, locally or aggregated", ["R-FED-19", "R-FED-17"], "absent"),
   T("PC-DIR-3", "SG-3", "home", "major", "The home aggregates its active peer's directory: the host's event appears with the same global ID and is labeled with its home host", ["R-FED-6"], "aggregated entry equal on identifying members"),
   T("PC-DIR-4", "SG-3", "host", "minor", "updated_at is monotonic per entry, and a closed event is reported with status closed", ["R-FED-19"], "monotonic; closed reported"),
   // Identity claims (G3)
-  T("PC-IDC-1", "SG-2", "home", "blocker", "The home mints an ilp-claim+jwt: typ, EdDSA, active kid; payload valid against identity-claim; aud = host; exp − iat ≤ 86400; no email or out-of-schema member", ["R-ID-17", "R-ID-18", "R-CORE-36", "R-CORE-38"], "valid claim"),
-  T("PC-IDC-2", "SG-2", "host", "blocker", "The host accepts a valid claim (202 pending, retrieval key) and creates a remote shadow principal keyed by the home global ID; identity alone confers nothing: an action authenticated only by the claim returns AUTHZ_REQUIRED", ["R-FED-7", "R-FED-8", "R-AUTHZ-1", "R-ID-18"], "202; AUTHZ_REQUIRED; no side effects"),
+  T("PC-IDC-1", "SG-2", "home", "blocker", "The home mints an ilp-claim+jwt: typ, EdDSA, active kid; payload valid against identity-claim; sub = the on_behalf_of synthetic human; aud = host; exp − iat ≤ 86400; no email or out-of-schema member; a claim request whose aud is not an active peer is refused with NOT_A_PEER", ["R-ID-17", "R-ID-18", "R-FED-7a", "R-CORE-36", "R-CORE-38"], "valid claim; NOT_A_PEER for a non-peer aud"),
+  T("PC-IDC-2", "SG-2", "host", "blocker", "The host accepts a valid claim (202 pending, retrieval key) and creates a remote shadow principal keyed by the home global ID; identity alone confers nothing: an action authenticated only by the claim returns AUTHZ_REQUIRED", ["R-FED-7", "R-FED-8", "R-AUTHZ-1", "R-AUTHZ-16", "R-ID-18"], "202; AUTHZ_REQUIRED; no side effects"),
   T("PC-IDC-3", "SG-2", "host", "blocker", "Claim validation: a replayed claim is rejected with CLAIM_REPLAYED; a claim for another audience with CLAIM_AUDIENCE_MISMATCH; an expired claim with CLAIM_EXPIRED; a tampered claim with SIGNATURE_INVALID", ["R-FED-14", "R-ID-18", "R-CORE-38"], "each code"),
   // Grants (G3)
-  T("PC-GRANT-1", "SG-2", "host", "blocker", "Approval issues an ilp-grant+jwt: typ, EdDSA, active kid; payload valid; iss = aud = host; sub = home global ID; agent bound; authorization_details names unconference@1.1 unconference.proposal; exp − iat ≤ test-grant TTL; credential_binding = S256(token)", ["R-AUTHZ-2", "R-AUTHZ-3", "R-AUTHZ-4", "R-AUTHZ-5", "R-AUTHZ-6"], "valid grant bound to the delivered token"),
+  T("PC-GRANT-1", "SG-2", "host", "blocker", "After approval, the authenticated join retrieval delivers the participant token and an ilp-grant+jwt: typ, EdDSA, active kid; payload valid; iss = aud = host; sub = home global ID; agent bound; authorization_details names unconference@1.1 unconference.proposal; exp − iat ≤ test-grant TTL; credential_binding = S256(token)", ["R-AUTHZ-2", "R-AUTHZ-3", "R-AUTHZ-4", "R-AUTHZ-5", "R-AUTHZ-6"], "valid grant bound to the delivered token"),
   T("PC-GRANT-2", "SG-2", "host", "major", "Grant status is public and secret-free (active), and the bearer can re-fetch the same grant at /ilp/v1/auth/grant", ["R-AUTHZ-9"], "active; same JWS"),
   T("PC-GRANT-3", "SG-3", "host", "blocker", "A grant used after exp (plus skew) is rejected with GRANT_EXPIRED and status reports expired", ["R-AUTHZ-5", "R-CORE-38"], "GRANT_EXPIRED"),
   // Receipts (G4)
@@ -48,7 +48,7 @@ const tests = [
   // Enforcement (G4, G5)
   T("PC-ENF-1", "SG-2", "host", "blocker", "The permitted action (unconference.proposal) by the remote agent is accepted exactly once, under the grant", ["R-AUTHZ-7", "R-FED-1"], "201; one action"),
   T("PC-ENF-2", "SG-2", "host", "blocker", "The out-of-scope action (unconference.vote) is rejected with GRANT_SCOPE_VIOLATION and produces no action, feed record, receipt, or tally change", ["R-AUTHZ-8", "R-AUTHZ-11"], "GRANT_SCOPE_VIOLATION; no side effects"),
-  T("PC-ENF-3", "SG-3", "host", "blocker", "A token and grant issued for event E1 used against event E2 on the same host is rejected with GRANT_EVENT_MISMATCH, with no side effects", ["R-AUTHZ-7", "R-CORE-29", "R-AUTHZ-11"], "GRANT_EVENT_MISMATCH"),
+  T("PC-ENF-3", "SG-3", "host", "blocker", "A token and grant issued for event E1 used against event E2 on the same host is rejected with GRANT_EVENT_MISMATCH, with no side effects", ["R-AUTHZ-7", "R-AUTHZ-17", "R-CORE-29", "R-AUTHZ-11"], "GRANT_EVENT_MISMATCH"),
   T("PC-ENF-4", "SG-3", "host", "blocker", "A presented grant issued by another host is rejected with GRANT_AUDIENCE_MISMATCH, with no side effects", ["R-AUTHZ-4", "R-AUTHZ-15"], "GRANT_AUDIENCE_MISMATCH"),
   T("PC-ENF-5", "SG-3", "host", "blocker", "A presented grant with an altered payload byte is rejected with SIGNATURE_INVALID, with no side effects", ["R-CORE-36", "R-AUTHZ-15"], "SIGNATURE_INVALID"),
   T("PC-ENF-6", "SG-3", "host", "blocker", "A presented grant bound to another participant's token is rejected with GRANT_BINDING_MISMATCH, with no side effects", ["R-AUTHZ-6", "R-AUTHZ-15"], "GRANT_BINDING_MISMATCH"),
@@ -64,7 +64,7 @@ const tests = [
   T("PC-REV-4", "SG-3", "host", "blocker", "Fail closed: when the home's revocation feed cannot be refreshed for 2 × bound, a new join from that peer is rejected with REVOCATION_STATE_UNKNOWN (503, retry_after), and an already-admitted remote participant is handled per the declared remote_session_policy (pause → REVOCATION_STATE_UNKNOWN); after the home returns and a refresh succeeds, that participant acts again", ["R-FED-21"], "REVOCATION_STATE_UNKNOWN; declared policy; recovery"),
   T("PC-REV-5", "SG-3", "host", "blocker", "Outage isolation: while the home is unreachable, the host's local event accepts a local participant's act", ["R-FED-12", "R-FED-21"], "local act accepted"),
   // Provisioning credential boundary (R-CONF-6)
-  T("PC-PROV-1", "SG-3", "home", "blocker", "The ilpp_ provisioning credential cannot mint a claim for, or revoke, a non-synthetic principal (FORBIDDEN), and cannot moderate joins or change peers (FORBIDDEN); no state changes", ["R-CONF-6"], "FORBIDDEN; no state change"),
+  T("PC-PROV-1", "SG-3", "home", "blocker", "The ilpp_ provisioning credential cannot mint a claim for, or revoke, a non-synthetic principal (FORBIDDEN), and cannot add peers, moderate joins, revoke grants, or act in an event (rejected: FORBIDDEN or AUTH_INVALID); no state changes", ["R-CONF-6"], "rejected; no state change"),
   // Interoperability (G7)
   T("PC-INTEROP-AB", "SG-3", "pair", "blocker", "Golden thread with Beta-A as home and Beta-B as host passes end to end (PEER-1, IDC-1..3, GRANT-1..2, ENF-1..2, RCPT-1)", ["R-CONF-2"], "all pass in SC-1"),
   T("PC-INTEROP-BA", "SG-3", "pair", "blocker", "Golden thread with Beta-B as home and Beta-A as host passes end to end", ["R-CONF-2"], "all pass in SC-2"),
@@ -121,6 +121,7 @@ const profile = {
     provisioning_credential: "ilpp_ SCR-1 credential: create principals marked synthetic, mint claims for them, revoke them. Never usable on non-synthetic principals.",
     events: "Created per scenario and repetition by the host's admin at startup: E1 (federated, live, remote allowed), E2 (same policy), E-short (grant_ttl_s = short_grant_ttl_s), E-mandate (mandates_allowed = [human_directed, human_approved]), E-excl (grant actions [proposal, vote], exclusions [vote]), E-private (private control), E-local (non-federated control with a local participant). Federation policy is set through federation_policy before the run.",
     non_synthetic_principal: "The host admin's own human global ID, given to the runner so PC-PROV-1 can attempt forbidden operations on it.",
+    negative_claim_signer: "pc-aux — a second runner-owned reference node, peered with every node under test. The runner signs negative claims (NF-4, NF-6) with pc-aux's own key; no key of any node under test is ever used (R-CONF-1).",
     outage_control: "PC-REV-4 and PC-REV-5 stop and restart the home node through the local harness (declared ops drill; the host under test is never touched).",
   },
   interfaces: {
@@ -138,7 +139,7 @@ const profile = {
     grant_status: "GET /ilp/v1/grants/{id}/status",
     grant_refetch: "GET /ilp/v1/auth/grant [Bearer ilpt_]",
     grant_revoke: "POST /ilp/v1/grants/{id}/revoke [operator credential]",
-    revocations: "GET /ilp/v1/federation/revocations?since=<seq>",
+    revocations: "GET /ilp/v1/federation/revocations?since=<seq> (public in 0.0.2; each record is signed)",
     synthetic: "POST /ilp/v1/admin/synthetic/humans {display_name, agent_display_name}; POST /ilp/v1/admin/synthetic/(humans|agents)/{id}/revoke [provisioning credential]",
     observables: "GET /ilp/v1/events/{event}/feed?since=; GET /ilp/v1/events/{event}/receipts",
     export: "POST /ilp/v1/events/{event}/exports; GET …/exports/{id} [operator credential]",
@@ -148,7 +149,7 @@ const profile = {
     { id: "NF-1", test: "PC-IDC-2", build: "an action with Authorization: Bearer <valid claim JWS>", expect: "AUTHZ_REQUIRED", step: 1 },
     { id: "NF-2", test: "PC-IDC-3", build: "submit the same claim twice", expect: "CLAIM_REPLAYED" },
     { id: "NF-3", test: "PC-IDC-3", build: "claim minted legitimately with aud = another host", expect: "CLAIM_AUDIENCE_MISMATCH" },
-    { id: "NF-4", test: "PC-IDC-3", build: "claim signed by the runner's reference node with exp in the past beyond skew", expect: "CLAIM_EXPIRED" },
+    { id: "NF-4", test: "PC-IDC-3", build: "claim signed by the runner-owned pc-aux node with exp in the past beyond skew", expect: "CLAIM_EXPIRED" },
     { id: "NF-5", test: "PC-IDC-3", build: "valid claim with one payload byte altered", expect: "SIGNATURE_INVALID" },
     { id: "NF-6", test: "PC-CORE-3", build: "reference-node claim with header alg none / alg HS256; claim with unpublished kid", expect: "SIGNATURE_INVALID; UNKNOWN_SIGNER" },
     { id: "NF-7", test: "PC-PEER-2", build: "claim from a node that is not a peer of the host", expect: "NOT_A_PEER" },

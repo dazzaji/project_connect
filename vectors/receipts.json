@@ -420,6 +420,28 @@
       ],
       "expect": "reject",
       "note": "links and hashes recompute, but the chain spans two events"
+    },
+    {
+      "id": "RCPT-BAD-7",
+      "chain": [
+        {
+          "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000001",
+          "action_kind": "engine.event_created",
+          "subject_human": "ilp:host.example:human:00000000-0000-7000-8000-0000000000aa",
+          "subject_agent": null,
+          "license_plate": null,
+          "mandate": "human_directed",
+          "source_class": "engine",
+          "resource": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "occurred_at": "2026-09-27T12:00:00.000Z",
+          "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "prev_receipt_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "c922a9de60425cf2737097232b9ef275a00e58d97ae5389e08051e203a887e63",
+          "x_note": "extension members are outside the hash body"
+        }
+      ],
+      "expect": "schema_reject",
+      "note": "an x_ member on a receipt is not covered by the hash, so receipts are closed (R-CORE-39(c) exception)"
     }
   ]
 }

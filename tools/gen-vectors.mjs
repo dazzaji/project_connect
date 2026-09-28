@@ -138,6 +138,7 @@ const jws = {
     { id: "JWS-BAD-12", kind: "grant", typ: TYP.grant, jws: signRaw(hdr, grantText.replace('"iat":', '"x_probe":1.5,"iat":'), HOST), expect: "VALIDATION_FAILED", note: "correctly signed, non-integer number (R-CORE-35)" },
     { id: "JWS-BAD-13", kind: "grant", typ: TYP.grant, jws: signRaw(hdr, grantText.replace('"iat":', '"x_probe":9007199254740993,"iat":'), HOST), expect: "VALIDATION_FAILED", note: "correctly signed, integer beyond ±(2^53−1)" },
     { id: "JWS-BAD-14", kind: "grant", typ: TYP.grant, jws: signRaw(hdr, grantText.replace('"iat":', '"x_probe":1e400,"iat":'), HOST), expect: "VALIDATION_FAILED", note: "correctly signed, infinity" },
+    { id: "JWS-BAD-16", kind: "grant", typ: TYP.grant, jws: signRaw(hdr, grantText.replace('"role":"participant"', '"role":"participant","role":"admin"'), HOST), expect: "VALIDATION_FAILED", note: "correctly signed, duplicate member name (role twice)" },
     { id: "JWS-BAD-15", kind: "grant", typ: TYP.grant, jws: signRaw(hdr, grantText.replace('"role":"participant"', '"role":"\\ud800"'), HOST), expect: "VALIDATION_FAILED", note: "correctly signed, lone surrogate" },
   ],
   resolve: "Resolve `kid` only among keys published by the payload's `iss` (keys[iss]).",
@@ -152,6 +153,7 @@ const jcs = {
     { id: "JCS-5", input: '{"n":9007199254740991}', expect: '{"n":9007199254740991}' },
     { id: "JCS-6", input: '{"s":"é"}', expect: '{"s":"é"}', note: "precomposed; never normalized" },
     { id: "JCS-7", input: '{"s":"e\u0301"}', expect: '{"s":"e\u0301"}', note: "decomposed (U+0065 U+0301) stays decomposed; never NFC-normalized" },
+    { id: "JCS-8", input: '{"s":"\\u0000\\u001f\\b\\t\\n\\f\\r\\"\\\\/\\u2028\\u2029\\ud83d\\ude00"}', expect: '{"s":"\\u0000\\u001f\\b\\t\\n\\f\\r\\"\\\\/\u2028\u2029\ud83d\ude00"}', note: "RFC 8785 escapes: controls escaped (short forms where defined), '/', U+2028, U+2029, and non-BMP emitted literally" },
     { id: "JCS-BAD-1", input: '{"n":1.5}', expect: "reject", note: "non-integer" },
     { id: "JCS-BAD-2", input: '{"n":1e400}', expect: "reject", note: "infinity" },
     { id: "JCS-BAD-3", input: '{"n":9007199254740993}', expect: "reject", note: "beyond ±(2^53−1)" },
@@ -213,6 +215,12 @@ const badChains = [];
   c[1].event = "ilp:host.example:event:00000000-0000-7000-8000-000000000099";
   c[1].hash = receiptHash(c[1]);
   badChains.push({ id: "RCPT-BAD-6", chain: c, expect: "reject", note: "links and hashes recompute, but the chain spans two events" });
+}
+
+{
+  const c = clone(good_chain).slice(0, 1);
+  c[0].x_note = "extension members are outside the hash body";
+  badChains.push({ id: "RCPT-BAD-7", chain: c, expect: "schema_reject", note: "an x_ member on a receipt is not covered by the hash, so receipts are closed (R-CORE-39(c) exception)" });
 }
 
 const receipts = {

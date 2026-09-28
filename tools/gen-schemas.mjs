@@ -280,8 +280,9 @@ const schemas = {
       event: gid("event"),
       status: { enum: ["pending", "approved", "rejected"] },
       subject: gid("human"),
-      participant_token: { type: "string", pattern: "^ilpt_[A-Za-z0-9_-]{16,}$", $comment: "present only when approved" },
+      participant_token: { type: "string", pattern: "^ilpt_[A-Za-z0-9_-]{16,}$", $comment: "present only when approved; a host MAY deliver it only once (then token_delivered is true)" },
       grant: { ...jwsCompact, $comment: "the ilp-grant+jwt; present only when approved" },
+      token_delivered: { type: "boolean", $comment: "true when the token was already delivered by an earlier retrieval (SCR-7)" },
       reason: { type: "string", maxLength: 500 },
     }),
   ),
@@ -289,7 +290,7 @@ const schemas = {
   receipt: schema(
     { id: "receipt", gen: 2 },
     "ILP receipt (R-CORE-22..25, R-CORE-40)",
-    obj(["id", "event", "action_kind", "subject_human", "subject_agent", "license_plate", "mandate", "resource", "occurred_at", "prev_receipt_hash", "hash"], {
+    closed(["id", "event", "action_kind", "subject_human", "subject_agent", "license_plate", "mandate", "resource", "occurred_at", "prev_receipt_hash", "hash"], {
       id: gid("receipt"),
       event: gid("event"),
       action_kind: { type: "string", minLength: 1 },
@@ -304,7 +305,7 @@ const schemas = {
       prev_receipt_hash: hex64,
       hash: hex64,
     }),
-    "Wire members equal the hash-body members plus `hash` (R-CORE-40.1); `resource_global_id` is not a member (K-21).",
+    "Wire members equal the hash-body members plus `hash` (R-CORE-40.1), so the set is CLOSED, including to `x_` members, which the hash would not cover; `resource_global_id` is not a member (K-21).",
   ),
 
   "export-manifest": schema(

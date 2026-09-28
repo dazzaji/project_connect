@@ -170,6 +170,14 @@
       "note": "correctly signed, infinity"
     },
     {
+      "id": "JWS-BAD-16",
+      "kind": "grant",
+      "typ": "ilp-grant+jwt",
+      "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6InZlYy1ob3N0LTEiLCJ0eXAiOiJpbHAtZ3JhbnQrand0In0.eyJpc3MiOiJodHRwczovL2hvc3QuZXhhbXBsZSIsImF1ZCI6Imh0dHBzOi8vaG9zdC5leGFtcGxlIiwianRpIjoiaWxwOmhvc3QuZXhhbXBsZTpncmFudDowMTkyZjBjMi03ZTFhLTdiNGUtOWE1NS0zYzFmMGUyZDRiNjEiLCJzdWIiOiJpbHA6aG9tZS5leGFtcGxlOmh1bWFuOjAxOTJhMWIzLTVjNmQtN2U4Zi05YTBiLTFjMmQzZTRmNWE2YiIsImFnZW50Ijp7ImlkIjoiaWxwOmhvbWUuZXhhbXBsZTphZ2VudDowMTkyYTFiMy1hYWFhLTdiYmItOGNjYy0xZDJlM2Y0YTViNmMiLCJsaWNlbnNlX3BsYXRlIjoiSUwtN1EzSzJNOVAifSwiZXZlbnQiOiJpbHA6aG9zdC5leGFtcGxlOmV2ZW50OjAxOTJlN2QxLTExMTEtNzIyMi04MzMzLTk0NDQ1NTU2NjY3NyIsImhvbWUiOiJob21lLmV4YW1wbGUiLCJyb2xlIjoicGFydGljaXBhbnQiLCJyb2xlIjoiYWRtaW4iLCJhdXRob3JpemF0aW9uX2RldGFpbHMiOlt7InR5cGUiOiJpbHAucGFja19hY3Rpb24iLCJwYWNrIjoidW5jb25mZXJlbmNlQDEuMSIsImFjdGlvbnMiOlsidW5jb25mZXJlbmNlLnByb3Bvc2FsIl19XSwiZXhjbHVzaW9ucyI6WyJ1bmNvbmZlcmVuY2Uudm90ZSJdLCJtYW5kYXRlc19hbGxvd2VkIjpbImh1bWFuX2RpcmVjdGVkIiwiaHVtYW5fYXBwcm92ZWQiXSwiaWF0IjoxNzkwNTAwMDAwLCJuYmYiOjE3OTA1MDAwMDAsImV4cCI6MTc5MDUwMDYwMCwiY3JlZGVudGlhbF9iaW5kaW5nIjp7ImFsZyI6IlMyNTYiLCJ2YWx1ZSI6Ikw5RTY1V0c1Mzg2el9tWU1fVVN2UXBycTFqQ1BsazJPX29ieVloakFVVkkifSwic3RhdHVzIjp7InVyaSI6Imh0dHBzOi8vaG9zdC5leGFtcGxlL2lscC92MS9ncmFudHMvMDE5MmYwYzItN2UxYS03YjRlLTlhNTUtM2MxZjBlMmQ0YjYxL3N0YXR1cyJ9LCJwYXJlbnRfZ3JhbnQiOm51bGx9.27LvJuhCfCMO2ycSLF2-pyauviICXmA83QQq_gfaWWQqVhfX97aMZqUDw34ikVwtnx4WxarAOaGZYN1l5QZhCA",
+      "expect": "VALIDATION_FAILED",
+      "note": "correctly signed, duplicate member name (role twice)"
+    },
+    {
       "id": "JWS-BAD-15",
       "kind": "grant",
       "typ": "ilp-grant+jwt",

@@ -6,7 +6,7 @@
   "artifacts": [
     {
       "path": "specifications/ilp_spec.md",
-      "sha256": "998db40c3bb6e7c0a928c33a501aae5d652bad11ddadd2ac8be2f798f7458e5f"
+      "sha256": "1c243c19731012d429324b910106b2ef674d353f898fe6d55dde687395e63f11"
     },
     {
       "path": "specifications/schemas/attestation.schema.json",
@@ -42,7 +42,7 @@
     },
     {
       "path": "specifications/schemas/join-request.schema.json",
-      "sha256": "34a1f0820318fe3a45dd04259c5d6ad4b104f3b595117a5135ae3fbf6b7d1fa6"
+      "sha256": "b806b675ec40b447cb5f7185a52d4a08daf3fed7498e6d909aa750c839f5050c"
     },
     {
       "path": "specifications/schemas/peer-record.schema.json",
@@ -54,7 +54,7 @@
     },
     {
       "path": "specifications/schemas/receipt.schema.json",
-      "sha256": "edf79ff9e4d84a7bd9842b8ed9ca69c39f14d138c9efc8145e31d7e370124948"
+      "sha256": "184570d461c495b8bbdc1632dfef7600bc862cbe180ad366ba0ac38c31d0a00c"
     },
     {
       "path": "specifications/schemas/revocation-feed.schema.json",
@@ -78,19 +78,19 @@
     },
     {
       "path": "vectors/jcs.json",
-      "sha256": "fc1ab5b912de56d0c8ee28ca299f7db4ce6449a6c10c70887b9d77fd1afd64e5"
+      "sha256": "86c94d1ec0dce6a904a7a05765345d8f2dd78ad22ab31a8baffd2a9cba4734e1"
     },
     {
       "path": "vectors/jws.json",
-      "sha256": "ce583788ddb6422519230d1d0a15662cf4d6f6f3e9fe9140888b3a3111be4507"
+      "sha256": "866577bb112ce4126263fc518573a9c6b98220c45ba4ca36f97f007d836d80e2"
     },
     {
       "path": "vectors/receipts.json",
-      "sha256": "1955349746dfd03ee89c0aa847e995b49a48c9415740fd8cdcea51321a8fd876"
+      "sha256": "7e55d6bda9231536a69f7ae866da651aa8f8ec6c6fcafc82544f72cbb4ec93bd"
     },
     {
       "path": "profile/pc-0.1-s1.json",
-      "sha256": "05a94d53182187bace65619a1024790902540aff770b63f5a8963b698efb53f5"
+      "sha256": "bafa61b9615fdd2a08b756167d319a1981d50a3861f30227aa582da4b2fdd921"
     }
   ]
 }

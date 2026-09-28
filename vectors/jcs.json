@@ -39,6 +39,12 @@
       "note": "decomposed (U+0065 U+0301) stays decomposed; never NFC-normalized"
     },
     {
+      "id": "JCS-8",
+      "input": "{\"s\":\"\\u0000\\u001f\\b\\t\\n\\f\\r\\\"\\\\/\\u2028\\u2029\\ud83d\\ude00\"}",
+      "expect": "{\"s\":\"\\u0000\\u001f\\b\\t\\n\\f\\r\\\"\\\\/  😀\"}",
+      "note": "RFC 8785 escapes: controls escaped (short forms where defined), '/', U+2028, U+2029, and non-BMP emitted literally"
+    },
+    {
       "id": "JCS-BAD-1",
       "input": "{\"n\":1.5}",
       "expect": "reject",

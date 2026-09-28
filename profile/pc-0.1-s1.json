@@ -111,6 +111,7 @@
     "provisioning_credential": "ilpp_ SCR-1 credential: create principals marked synthetic, mint claims for them, revoke them. Never usable on non-synthetic principals.",
     "events": "Created per scenario and repetition by the host's admin at startup: E1 (federated, live, remote allowed), E2 (same policy), E-short (grant_ttl_s = short_grant_ttl_s), E-mandate (mandates_allowed = [human_directed, human_approved]), E-excl (grant actions [proposal, vote], exclusions [vote]), E-private (private control), E-local (non-federated control with a local participant). Federation policy is set through federation_policy before the run.",
     "non_synthetic_principal": "The host admin's own human global ID, given to the runner so PC-PROV-1 can attempt forbidden operations on it.",
+    "negative_claim_signer": "pc-aux — a second runner-owned reference node, peered with every node under test. The runner signs negative claims (NF-4, NF-6) with pc-aux's own key; no key of any node under test is ever used (R-CONF-1).",
     "outage_control": "PC-REV-4 and PC-REV-5 stop and restart the home node through the local harness (declared ops drill; the host under test is never touched)."
   },
   "interfaces": {
@@ -128,7 +129,7 @@
     "grant_status": "GET /ilp/v1/grants/{id}/status",
     "grant_refetch": "GET /ilp/v1/auth/grant [Bearer ilpt_]",
     "grant_revoke": "POST /ilp/v1/grants/{id}/revoke [operator credential]",
-    "revocations": "GET /ilp/v1/federation/revocations?since=<seq>",
+    "revocations": "GET /ilp/v1/federation/revocations?since=<seq> (public in 0.0.2; each record is signed)",
     "synthetic": "POST /ilp/v1/admin/synthetic/humans {display_name, agent_display_name}; POST /ilp/v1/admin/synthetic/(humans|agents)/{id}/revoke [provisioning credential]",
     "observables": "GET /ilp/v1/events/{event}/feed?since=; GET /ilp/v1/events/{event}/receipts",
     "export": "POST /ilp/v1/events/{event}/exports; GET …/exports/{id} [operator credential]"
@@ -163,7 +164,7 @@
     {
       "id": "NF-4",
       "test": "PC-IDC-3",
-      "build": "claim signed by the runner's reference node with exp in the past beyond skew",
+      "build": "claim signed by the runner-owned pc-aux node with exp in the past beyond skew",
       "expect": "CLAIM_EXPIRED"
     },
     {
@@ -476,12 +477,15 @@
       "gate": "SG-3",
       "role": "pair",
       "severity": "major",
-      "title": "Peering state changes (suspend, reinstate) are visible on the public peer list and are published as signed revocation records of kind peer",
+      "title": "Peering state changes (suspend, reinstate) are visible on the public peer list (a suspended peer is listed as suspended) and are published as signed revocation records of kind peer; the reinstatement record carries reinstated: true",
       "traces": [
         "R-FED-3",
+        "R-FED-3a",
+        "R-FED-4",
+        "R-FED-10a",
         "R-FED-16"
       ],
-      "expect": "state + record",
+      "expect": "state + records",
       "since": "0.0.2",
       "verification": "black-box"
     },
@@ -544,14 +548,15 @@
       "gate": "SG-2",
       "role": "home",
       "severity": "blocker",
-      "title": "The home mints an ilp-claim+jwt: typ, EdDSA, active kid; payload valid against identity-claim; aud = host; exp − iat ≤ 86400; no email or out-of-schema member",
+      "title": "The home mints an ilp-claim+jwt: typ, EdDSA, active kid; payload valid against identity-claim; sub = the on_behalf_of synthetic human; aud = host; exp − iat ≤ 86400; no email or out-of-schema member; a claim request whose aud is not an active peer is refused with NOT_A_PEER",
       "traces": [
         "R-ID-17",
         "R-ID-18",
+        "R-FED-7a",
         "R-CORE-36",
         "R-CORE-38"
       ],
-      "expect": "valid claim",
+      "expect": "valid claim; NOT_A_PEER for a non-peer aud",
       "since": "0.0.2",
       "verification": "black-box"
     },
@@ -565,6 +570,7 @@
         "R-FED-7",
         "R-FED-8",
         "R-AUTHZ-1",
+        "R-AUTHZ-16",
         "R-ID-18"
       ],
       "expect": "202; AUTHZ_REQUIRED; no side effects",
@@ -591,7 +597,7 @@
       "gate": "SG-2",
       "role": "host",
       "severity": "blocker",
-      "title": "Approval issues an ilp-grant+jwt: typ, EdDSA, active kid; payload valid; iss = aud = host; sub = home global ID; agent bound; authorization_details names unconference@1.1 unconference.proposal; exp − iat ≤ test-grant TTL; credential_binding = S256(token)",
+      "title": "After approval, the authenticated join retrieval delivers the participant token and an ilp-grant+jwt: typ, EdDSA, active kid; payload valid; iss = aud = host; sub = home global ID; agent bound; authorization_details names unconference@1.1 unconference.proposal; exp − iat ≤ test-grant TTL; credential_binding = S256(token)",
       "traces": [
         "R-AUTHZ-2",
         "R-AUTHZ-3",
@@ -711,6 +717,7 @@
       "title": "A token and grant issued for event E1 used against event E2 on the same host is rejected with GRANT_EVENT_MISMATCH, with no side effects",
       "traces": [
         "R-AUTHZ-7",
+        "R-AUTHZ-17",
         "R-CORE-29",
         "R-AUTHZ-11"
       ],
@@ -907,11 +914,11 @@
       "gate": "SG-3",
       "role": "home",
       "severity": "blocker",
-      "title": "The ilpp_ provisioning credential cannot mint a claim for, or revoke, a non-synthetic principal (FORBIDDEN), and cannot moderate joins or change peers (FORBIDDEN); no state changes",
+      "title": "The ilpp_ provisioning credential cannot mint a claim for, or revoke, a non-synthetic principal (FORBIDDEN), and cannot add peers, moderate joins, revoke grants, or act in an event (rejected: FORBIDDEN or AUTH_INVALID); no state changes",
       "traces": [
         "R-CONF-6"
       ],
-      "expect": "FORBIDDEN; no state change",
+      "expect": "rejected; no state change",
       "since": "0.0.2",
       "verification": "black-box"
     },

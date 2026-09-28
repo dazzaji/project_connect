@@ -2,12 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:ilp:schema:receipt:v2",
   "title": "ILP receipt (R-CORE-22..25, R-CORE-40)",
-  "$comment": "Wire members equal the hash-body members plus `hash` (R-CORE-40.1); `resource_global_id` is not a member (K-21).",
+  "$comment": "Wire members equal the hash-body members plus `hash` (R-CORE-40.1), so the set is CLOSED, including to `x_` members, which the hash would not cover; `resource_global_id` is not a member (K-21).",
   "type": "object",
   "additionalProperties": false,
-  "patternProperties": {
-    "^x_": {}
-  },
   "required": [
     "id",
     "event",

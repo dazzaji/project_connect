@@ -276,7 +276,8 @@ Specifications and conformance tests evolve together. Every artifact that can ch
   - **SCR-3** — `federation.active_kid` in discovery (R-CORE-34(g)).
   - **SCR-4** — Peer records and reinstatement records (R-FED-3a, R-FED-10a); the claim-minting request (R-FED-7a); the `base_url` peering request (R-FED-3).
   - **SCR-6** — The declared remote-session policy (R-FED-21a).
-- **Tightened:** JWS verifiers reject unsupported `crit` extensions and signed values outside the canonicalization profile (R-CORE-35, R-CORE-36); identity claims are closed to `x_` members (R-CORE-39(c)); receipt chains are verified per event.
+  - **SCR-7** — Token delivery at first authenticated join retrieval; `token_delivered` on later retrievals (`join-request` schema). A host MAY deliver the token only once, so it never rests anywhere but as a hash (R-CORE-18).
+- **Tightened:** JWS verifiers reject unsupported `crit` extensions, duplicate member names, and signed values outside the canonicalization profile (R-CORE-35, R-CORE-36); canonical strings use the RFC 8785 escape table, never a host serializer; identity claims and receipts are closed to `x_` members (R-CORE-39(c)); receipt chains are verified per event; the public peer list shows active and suspended peers (R-FED-4); the revocation feed is public while OI-3 is open.
 - **Credential prefixes** `ilpo_`, `ilpf_`, and `ilpp_` registered (§17.11).
 
 ---
@@ -511,6 +512,7 @@ All other modules inherit these conventions.
   |---|---|---|
   | 0 | Syntactic request validity: JSON parse, envelope shape, size | `VALIDATION_FAILED`, `PAYLOAD_TOO_LARGE` |
   | 1 | Credential presence and validity | `AUTH_MISSING`, `AUTH_INVALID`, `AUTH_EXPIRED`, `AUTH_REVOKED`, `CSRF_FAILED` |
+| 1a | *[NEW 0.0.2]* The bearer is a verifying identity claim (R-AUTHZ-16) — reported instead of `AUTH_INVALID` | `AUTHZ_REQUIRED` |
   | 2 | Resource existence and visibility | `NOT_FOUND` |
   | 3 | Registration or admission state | `FORBIDDEN` + `code_detail: PENDING_APPROVAL` |
   | 4a | *[NEW 0.0.2, SCR-2]* Authenticity of a **presented** grant (R-AUTHZ-15): issuer and audience are this host, then signature | `GRANT_AUDIENCE_MISMATCH`, `SIGNATURE_INVALID`, `UNKNOWN_SIGNER` |
@@ -722,7 +724,7 @@ Example (0.0.1):
 - **R-CORE-39 [NEW 0.0.1] — Strict on emit, lenient on receive.**
   - **(a) Emit.** A producer MUST emit only documents valid under the strict schema for a specification version it declares (R-CORE-31).
   - **(b) Receive.** A consumer of federation payloads and signed objects MUST ignore unknown members (R-FED-15). Unknown members MUST NOT make the object fail, other than failing a signature check, which covers the bytes as received.
-  - **(c) Extensions.** Extension members MUST be named with the prefix `x_`. Strict schemas SHALL permit `^x_` members (OI-2), **except** the identity claim, whose member set is closed to extensions as well (R-ID-18, R-SEC-19) *[CHANGED 0.0.2]*.
+  - **(c) Extensions.** Extension members MUST be named with the prefix `x_`. Strict schemas SHALL permit `^x_` members (OI-2), **except** the identity claim, whose member set is closed (R-ID-18, R-SEC-19), and the receipt, whose members are exactly its hash body (R-CORE-40) *[CHANGED 0.0.2]*.
   - **(d) Testing.** Conformance tests validate an implementation's **own output** against the strict schemas, and validate its **handling of peer input** with unknown members present.
   - *Rationale: the baseline's closed schemas (`additionalProperties: false`) contradicted its own forward-compatibility rule (K-4). The reference implementation's live discovery document already fails its own schema (K-3).*
 
@@ -930,7 +932,7 @@ This section supersedes the latter as the protocol object for authority.
   - Renewal re-issues a new grant (a new `jti`) bound to the same credential. The old grant is superseded, and SHOULD be marked `superseded` on its status endpoint.
 - **R-AUTHZ-6 — Credential binding.**
   - The host MUST verify that the presented participant token hashes to `credential_binding.value`. On mismatch it returns `GRANT_BINDING_MISMATCH`.
-  - A grant is **not** a bearer credential. Presenting a grant without its bound token confers nothing.
+  - A grant is **not** a bearer credential. Presenting a grant without its bound token confers nothing: a grant JWS in `Authorization` is `AUTH_INVALID`, and `ILP-Grant` with no `Authorization` is `AUTH_MISSING` *[0.0.2]*.
   - *Stronger sender-constrained binding, such as DPoP [RFC 9449], is future work (OI-6). The `cnf` claim of RFC 7800 is deliberately not used, because a token hash is not a registered confirmation method.*
 - **R-AUTHZ-7 — Evaluation.** For every governed action, the host evaluates the applicable grant before any write, in the precedence order of R-CORE-29 (steps 4–6).
 - **R-AUTHZ-8 — Narrowing only.**
@@ -1004,7 +1006,7 @@ This section supersedes the latter as the protocol object for authority.
 
 | Code | HTTP | When |
 |---|---|---|
-| `AUTHZ_REQUIRED` | 403 | Valid identity or credential, but no current grant covers the principal for this event (P11) |
+| `AUTHZ_REQUIRED` | 403 | Valid identity or credential, but no current grant covers the principal for this event (P11); also a verifying identity claim presented as the bearer (R-AUTHZ-16) |
 | `GRANT_SCOPE_VIOLATION` | 403 | The action is not within `authorization_details`, is excluded, or declares a disallowed mandate (`code_detail: MANDATE_NOT_ALLOWED`) |
 | `GRANT_EXPIRED` | 403 | Outside `nbf`–`exp`, allowing for skew |
 | `GRANT_REVOKED` | 403 | The grant's status is `revoked` or `superseded` |
@@ -1286,7 +1288,7 @@ See §14.
   - `POST /ilp/v1/federation/peers {base_url}` is an admin action (or one taken with a peering-scoped credential, R-CONF-3) that fetches and pins the peer's discovery document. *[CHANGED 0.0.2, SCR-4]* `base_url` is `scheme://host[:port]` with no path; the peer's `instance.host` MUST equal the host in `base_url`. The baseline's `{host}` form remains accepted as shorthand for `https://<host>`.
   - Peer states are `proposed → active → suspended → removed`. Every change is audited and receipted.
   - Only `active` peers are honored.
-- **R-FED-4** — `GET /ilp/v1/federation/peers` is public and lists active peers.
+- **R-FED-4** *[CHANGED 0.0.2]* — `GET /ilp/v1/federation/peers` is public. It lists `active` and `suspended` peers, each with its state; `proposed` and `removed` peers are not listed.
 - **R-FED-3a [NEW 0.0.2, SCR-4] — Peer records.** Peer-list items validate against `peer-record`. `common_spec_versions` is the intersection of both sides' `spec_versions`; an empty array is how a mismatch is surfaced (R-FED-15). Suspended peers are listed with `state: "suspended"` so that the change is publicly visible.
 
 ### 10.3 Federated event directory
@@ -1314,7 +1316,7 @@ Actors:
 The steps:
 
 1. **Discover.** M sees E in A's aggregated directory, or directly on B.
-2. **Initiate.** Using a session on A, M calls `POST /ilp/v1/claims { purpose: "event_join", event: <E>, agent? }`. A mints an identity claim (R-ID-17) with audience B, valid for at most 24 hours and single-use.
+2. **Initiate.** Using a session on A, M calls `POST /ilp/v1/claims { purpose: "event_join", event: <E>, aud: <B's base URL>, agent? }` (R-FED-7a). A mints an identity claim (R-ID-17) with audience B, valid for at most 24 hours and single-use.
 3. **Request.** `POST https://B/ilp/v1/events/{E}/join-requests { claim, consent_accepted? }` returns `202 { join_request_id, status: "pending", retrieval_key }`.
 4. **Validate (B).** B checks, in order:
    1. A is an `active` peer (else `NOT_A_PEER`, or `PEER_SUSPENDED`).
@@ -1330,7 +1332,7 @@ The steps:
 7. **Participate.** M and M's agent use B's ILP-EVENT API exactly as a local participant would, and every governed action is evaluated against the grant (§7).
 
 - **R-FED-7** — Steps 3–6 are the normative join protocol. Every state change emits feed records and receipts on B. Claim minting is audited on A.
-- **R-FED-7a [NEW 0.0.2, SCR-4] — Claim-minting request.** `POST /ilp/v1/claims` takes `{ purpose: "event_join", event: <host event global ID>, aud: <host base URL>, agent: <agent global ID> | null, consent_accepted?: {kind, text_version, text_sha256} }`. The home MUST refuse (`NOT_A_PEER`) when the host named by `aud` is not an active peer, and MUST set `sub` to the requesting human. Under a provisioning credential (R-CONF-6), `on_behalf_of` names the synthetic human.
+- **R-FED-7a [NEW 0.0.2, SCR-4] — Claim-minting request.** `POST /ilp/v1/claims` takes `{ purpose: "event_join", event: <host event global ID>, aud: <host base URL>, agent: <agent global ID> | null, consent_accepted?: {kind, text_version, text_sha256} }`. The home MUST refuse (`NOT_A_PEER`) when the host named by `aud` is not an active peer, and MUST set `sub` to the requesting human. Under a provisioning credential (R-CONF-6), `on_behalf_of` names the synthetic human, and the minted `sub` equals it; otherwise `sub` is the authenticated human. `on_behalf_of` is a request member, never a claim member.
 - **R-FED-8** — B MUST treat A's attestation as **identity evidence, not authority** (P11). Admission is B's decision.
 - **R-FED-9** — Receipts and exports on B record M with M's A-origin global ID, the claim reference, and the **grant reference** [CHANGED 0.0.1]. A never receives copies of E's records.
 
@@ -1346,7 +1348,7 @@ The steps:
     - the plate string for `plate`;
     - the peer host for `peer`.
   - Feed: `GET /ilp/v1/federation/revocations?since=<seq>` → `{ items: [ { seq, jws } ], next_cursor, latest_seq }`.
-  - The feed is readable by active peers (R-FED-2 governs request authentication). Because each record is signed, it can also be verified offline.
+  - The feed is readable by active peers (R-FED-2 governs request authentication). Because each record is signed, it can also be verified offline. *[0.0.2]* While RFC 9421 request signing is excluded (OI-3), the feed is served publicly; each record's own signature is the integrity control.
   - Hosts MUST check the specific subject at join time. They MUST poll active peers' feeds within the declared bound for shadow principals holding active tokens. On a hit, they revoke the affected tokens and grants and alert the operator.
 - **R-FED-10a [NEW 0.0.2, SCR-4] — Reinstatement.** Reinstating a suspended peer is published as a revocation record of kind `peer` with `reinstated: true`. Consumers apply records in `seq` order.
 - **R-FED-11** — Local revocation always works, whatever the federation state:
@@ -1598,7 +1600,7 @@ They are companion specifications on the baseline `0.0.0.1` line and have not ye
   - Conformance is tested black-box, only through an implementation's declared public interfaces.
   - Tests MUST NOT depend on any of the following:
     - a shared database;
-    - private signing keys;
+    - private signing keys of any node under test *(the runner MAY sign with its own nodes' keys, R-CONF-3)*;
     - imported implementation internals;
     - privileged inspection of internal state.
 - **R-CONF-2 [NEW 0.0.1]** — Separate findings.
