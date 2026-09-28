@@ -16,7 +16,7 @@ const tests = [
   T("PC-DISC-1", "SG-2", "both", "blocker", "Discovery document is served at /.well-known/interlateral.json and validates against the strict discovery schema", ["R-CORE-20", "R-CORE-28", "R-CORE-39"], "200; schema discovery v2 valid"),
   T("PC-DISC-2", "SG-2", "both", "blocker", "Build identity is present and stable: instance.software.build and instance.deployment_id are non-empty, equal across fetches, and equal to the values bound into the evidence packet. (That the build changes when code changes is verify: review, R-OPS-11.)", ["R-CORE-30"], "two fetches equal; non-empty build and deployment_id"),
   T("PC-DISC-3", "SG-2", "both", "major", "spec_versions declares the profile's specification version; protocols includes ilp/1; instance.host has no scheme, port, or path", ["R-CORE-31", "R-CORE-7a", "R-FED-15"], "spec_versions ∋ 0.0.2"),
-  T("PC-DISC-4", "SG-2", "both", "blocker", "Keys: every key is an Ed25519 OKP JWK; federation.active_kid names a listed key; every signed object observed in the run carries the active kid; revocation_bound_s ≤ profile bound; the remote-session policy is declared", ["R-CORE-21", "R-CORE-34", "R-FED-20", "R-FED-21"], "active kid used by claims, grants, revocations"),
+  T("PC-DISC-4", "SG-2", "both", "blocker", "Keys: every key is an Ed25519 OKP JWK; federation.active_kid names a listed key; every signed object observed in the run carries the active kid; revocation_bound_s ≤ profile bound; the declared remote_session_policy is pause with after_s ≤ parameters.remote_session_policy.after_s_max", ["R-CORE-21", "R-CORE-34", "R-FED-20", "R-FED-21", "R-FED-21a"], "active kid used by claims, grants, revocations"),
   T("PC-DISC-5", "SG-3", "both", "major", "Key custody ops drill: started in production mode with its key file absent, the node refuses to start; started in declared development mode with a key file present, the node does not replace it", ["R-CORE-34"], "refusal; key unchanged", { verification: "ops-drill" }),
   // Core conventions
   T("PC-CORE-1", "SG-3", "both", "major", "Problem documents: type = urn:ilp:error:<CODE>, title = <CODE>, status = HTTP status, served as application/problem+json", ["R-CORE-9", "R-CORE-9a", "R-CORE-11"], "every negative response in the run conforms"),
@@ -86,6 +86,7 @@ const profile = {
     claim_ttl_max_s: 86400,
     test_grant_ttl_max_s: 600,
     short_grant_ttl_s: 20,
+    remote_session_policy: { on_stale_revocation_state: "pause", after_s_max: 120, $comment: "certification requires the pause policy within 2 × bound (R-FED-21a); asserted by PC-DISC-4" },
     pack: "unconference@1.1",
     permitted_action: "unconference.proposal",
     out_of_scope_probe: "unconference.vote",
@@ -167,7 +168,7 @@ const profile = {
     { id: "NF-19", test: "PC-ENF-11", build: "vote on E-excl (listed in authorization_details and exclusions)", expect: "GRANT_SCOPE_VIOLATION", step: 6 },
     { id: "NF-20", test: "PC-ENF-11", build: "proposal number cap+1 under a proposal grant", expect: "VOTE_CAP_EXCEEDED | CONFLICT", step: 10 },
     { id: "NF-21", test: "PC-PROV-1", build: "ilpp_ used to mint a claim on behalf of the admin human; to approve a join; to add a peer", expect: "FORBIDDEN" },
-    { id: "NF-22", test: "PC-REV-4", build: "admitted remote participant acts after the home has been unreachable for 2 × bound", expect: "REVOCATION_STATE_UNKNOWN", step: 4 },
+    { id: "NF-22", test: "PC-REV-4", build: "admitted remote participant acts after the home has been unreachable for longer than the declared remote_session_policy.after_s (≤ 2 × bound; the pause policy is required by parameters.remote_session_policy)", expect: "REVOCATION_STATE_UNKNOWN", step: 4 },
   ],
   evidence_packet: {
     content_manifest: "content.json — format pc-evidence/1: profile id + sha256, spec version, subjects (build, deployment, discovery hash, keys), runner, files[], summary",

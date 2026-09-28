@@ -117,6 +117,12 @@ function signRaw(headerObj, payloadText, jwk) {
   const k = cpk({ key: { kty: "OKP", crv: "Ed25519", d: jwk.d, x: jwk.x }, format: "jwk" });
   return `${input}.${b64u.encode(edSign(null, Buffer.from(input, "ascii"), k))}`;
 }
+// Sign raw payload BYTES (for encoding-level negatives).
+function signRawBytes(headerObj, payloadBytes, jwk) {
+  const input = `${b64u.encode(Buffer.from(JSON.stringify(headerObj)))}.${b64u.encode(payloadBytes)}`;
+  const k = cpk({ key: { kty: "OKP", crv: "Ed25519", d: jwk.d, x: jwk.x }, format: "jwk" });
+  return `${input}.${b64u.encode(edSign(null, Buffer.from(input, "ascii"), k))}`;
+}
 const grantText = JSON.stringify(grant);
 const hdr = { alg: "EdDSA", kid: HOST.kid, typ: TYP.grant };
 
@@ -139,6 +145,8 @@ const jws = {
     { id: "JWS-BAD-13", kind: "grant", typ: TYP.grant, jws: signRaw(hdr, grantText.replace('"iat":', '"x_probe":9007199254740993,"iat":'), HOST), expect: "VALIDATION_FAILED", note: "correctly signed, integer beyond ±(2^53−1)" },
     { id: "JWS-BAD-14", kind: "grant", typ: TYP.grant, jws: signRaw(hdr, grantText.replace('"iat":', '"x_probe":1e400,"iat":'), HOST), expect: "VALIDATION_FAILED", note: "correctly signed, infinity" },
     { id: "JWS-BAD-16", kind: "grant", typ: TYP.grant, jws: signRaw(hdr, grantText.replace('"role":"participant"', '"role":"participant","role":"admin"'), HOST), expect: "VALIDATION_FAILED", note: "correctly signed, duplicate member name (role twice)" },
+    { id: "JWS-BAD-17", kind: "claim", typ: TYP.claim, jws: signRawBytes({ alg: "EdDSA", kid: HOME.kid, typ: TYP.claim }, Buffer.concat([Buffer.from(JSON.stringify(claim).split("Vector Human")[0] + "Vector "), Buffer.from([0xff]), Buffer.from("Human" + JSON.stringify(claim).split("Vector Human")[1])]), HOME), expect: "VALIDATION_FAILED", note: "correctly signed payload containing the invalid UTF-8 byte 0xFF" },
+    { id: "JWS-BAD-18", kind: "claim", typ: TYP.claim, jws: (() => { const [h, p, s] = good.claim.split("."); return `${h}.${p}A.${s}`; })(), expect: "VALIDATION_FAILED", note: "payload segment with an impossible base64url length" },
     { id: "JWS-BAD-15", kind: "grant", typ: TYP.grant, jws: signRaw(hdr, grantText.replace('"role":"participant"', '"role":"\\ud800"'), HOST), expect: "VALIDATION_FAILED", note: "correctly signed, lone surrogate" },
   ],
   resolve: "Resolve `kid` only among keys published by the payload's `iss` (keys[iss]).",

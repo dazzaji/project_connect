@@ -62,7 +62,9 @@ export const TESTS = {
       for (const k of d.keys) check(k.kty === "OKP" && k.crv === "Ed25519" && k.use === "sig", `${node.name}: key ${k.kid} is not an Ed25519 signing JWK`);
       check(d.keys.some((k) => k.kid === d.federation.active_kid), `${node.name}: active_kid not listed`);
       check(d.federation.revocation_bound_s <= ctx.profile.parameters.revocation_bound_s, `${node.name}: revocation_bound_s ${d.federation.revocation_bound_s} exceeds profile bound`);
-      check(d.federation.remote_session_policy?.on_stale_revocation_state, `${node.name}: remote_session_policy not declared`);
+      const pol = d.federation.remote_session_policy;
+      const req = ctx.profile.parameters.remote_session_policy;
+      check(pol?.on_stale_revocation_state === req.on_stale_revocation_state && pol.after_s <= req.after_s_max, `${node.name}: remote_session_policy ${JSON.stringify(pol)} does not meet ${JSON.stringify(req)}`);
       ctx.activeKid[node.name] = d.federation.active_kid;
       out[node.name] = { active_kid: d.federation.active_kid, bound: d.federation.revocation_bound_s };
     }

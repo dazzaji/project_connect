@@ -82,7 +82,7 @@
     },
     {
       "path": "vectors/jws.json",
-      "sha256": "866577bb112ce4126263fc518573a9c6b98220c45ba4ca36f97f007d836d80e2"
+      "sha256": "83e315f4509251a8babebb9f2176b5e4cd71d6b5ce395fed27a72d52d0b644fe"
     },
     {
       "path": "vectors/receipts.json",
@@ -90,7 +90,7 @@
     },
     {
       "path": "profile/pc-0.1-s1.json",
-      "sha256": "62d8c73a49b51fc187f082c62b13148cfbc363d60f27424963144e23577e5546"
+      "sha256": "39c998aa9f8ed0a1cb2786818a65a797156130ea6244d4d07185b35a9b7595bf"
     }
   ]
 }

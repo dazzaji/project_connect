@@ -178,6 +178,22 @@
       "note": "correctly signed, duplicate member name (role twice)"
     },
     {
+      "id": "JWS-BAD-17",
+      "kind": "claim",
+      "typ": "ilp-claim+jwt",
+      "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6InZlYy1ob21lLTEiLCJ0eXAiOiJpbHAtY2xhaW0rand0In0.eyJpc3MiOiJodHRwczovL2hvbWUuZXhhbXBsZSIsInN1YiI6ImlscDpob21lLmV4YW1wbGU6aHVtYW46MDE5MmExYjMtNWM2ZC03ZThmLTlhMGItMWMyZDNlNGY1YTZiIiwiYXVkIjoiaHR0cHM6Ly9ob3N0LmV4YW1wbGUiLCJpYXQiOjE3OTA1MDAwMDAsImV4cCI6MTc5MDUwMzYwMCwianRpIjoiY2xhaW0tMDE5MmYwYzItMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDAxIiwiZGlzcGxheV9uYW1lIjoiVmVjdG9yIP9IdW1hbiIsInZlcmlmaWVkIjp0cnVlLCJ2ZXJpZmllZF9tZXRob2QiOiJlbWFpbF9vdHAiLCJhZ2VudCI6eyJpZCI6ImlscDpob21lLmV4YW1wbGU6YWdlbnQ6MDE5MmExYjMtYWFhYS03YmJiLThjY2MtMWQyZTNmNGE1YjZjIiwiZGlzcGxheV9uYW1lIjoiVmVjdG9yIEFnZW50IiwibGljZW5zZV9wbGF0ZSI6IklMLTdRM0syTTlQIn0sInB1cnBvc2UiOiJldmVudF9qb2luIiwiZXZlbnQiOiJpbHA6aG9zdC5leGFtcGxlOmV2ZW50OjAxOTJlN2QxLTExMTEtNzIyMi04MzMzLTk0NDQ1NTU2NjY3NyIsImNvbnNlbnRfYWNjZXB0ZWQiOm51bGx9.H_VaHaJz6UOwyNCoXyJEdJQJxRMVNcd1kpQscJI71Uglrt5NALCWWdnH2QdRsNZXqe6QOQwcE927zcjdzn63BA",
+      "expect": "VALIDATION_FAILED",
+      "note": "correctly signed payload containing the invalid UTF-8 byte 0xFF"
+    },
+    {
+      "id": "JWS-BAD-18",
+      "kind": "claim",
+      "typ": "ilp-claim+jwt",
+      "jws": "eyJhbGciOiJFZERTQSIsImtpZCI6InZlYy1ob21lLTEiLCJ0eXAiOiJpbHAtY2xhaW0rand0In0.eyJhZ2VudCI6eyJkaXNwbGF5X25hbWUiOiJWZWN0b3IgQWdlbnQiLCJpZCI6ImlscDpob21lLmV4YW1wbGU6YWdlbnQ6MDE5MmExYjMtYWFhYS03YmJiLThjY2MtMWQyZTNmNGE1YjZjIiwibGljZW5zZV9wbGF0ZSI6IklMLTdRM0syTTlQIn0sImF1ZCI6Imh0dHBzOi8vaG9zdC5leGFtcGxlIiwiY29uc2VudF9hY2NlcHRlZCI6bnVsbCwiZGlzcGxheV9uYW1lIjoiVmVjdG9yIEh1bWFuIiwiZXZlbnQiOiJpbHA6aG9zdC5leGFtcGxlOmV2ZW50OjAxOTJlN2QxLTExMTEtNzIyMi04MzMzLTk0NDQ1NTU2NjY3NyIsImV4cCI6MTc5MDUwMzYwMCwiaWF0IjoxNzkwNTAwMDAwLCJpc3MiOiJodHRwczovL2hvbWUuZXhhbXBsZSIsImp0aSI6ImNsYWltLTAxOTJmMGMyLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDAwMSIsInB1cnBvc2UiOiJldmVudF9qb2luIiwic3ViIjoiaWxwOmhvbWUuZXhhbXBsZTpodW1hbjowMTkyYTFiMy01YzZkLTdlOGYtOWEwYi0xYzJkM2U0ZjVhNmIiLCJ2ZXJpZmllZCI6dHJ1ZSwidmVyaWZpZWRfbWV0aG9kIjoiZW1haWxfb3RwIn0A.8hx2eAFktmB9IuoowakKtA42GdGtLPlyO6HtgGEbdb0Tm5xC_ar0bIRt567_xNFJp9Bs4QDlSITjTV0oub29AQ",
+      "expect": "VALIDATION_FAILED",
+      "note": "payload segment with an impossible base64url length"
+    },
+    {
       "id": "JWS-BAD-15",
       "kind": "grant",
       "typ": "ilp-grant+jwt",

@@ -11,6 +11,11 @@
     "claim_ttl_max_s": 86400,
     "test_grant_ttl_max_s": 600,
     "short_grant_ttl_s": 20,
+    "remote_session_policy": {
+      "on_stale_revocation_state": "pause",
+      "after_s_max": 120,
+      "$comment": "certification requires the pause policy within 2 × bound (R-FED-21a); asserted by PC-DISC-4"
+    },
     "pack": "unconference@1.1",
     "permitted_action": "unconference.proposal",
     "out_of_scope_probe": "unconference.vote",
@@ -285,7 +290,7 @@
     {
       "id": "NF-22",
       "test": "PC-REV-4",
-      "build": "admitted remote participant acts after the home has been unreachable for 2 × bound",
+      "build": "admitted remote participant acts after the home has been unreachable for longer than the declared remote_session_policy.after_s (≤ 2 × bound; the pause policy is required by parameters.remote_session_policy)",
       "expect": "REVOCATION_STATE_UNKNOWN",
       "step": 4
     }
@@ -347,12 +352,13 @@
       "gate": "SG-2",
       "role": "both",
       "severity": "blocker",
-      "title": "Keys: every key is an Ed25519 OKP JWK; federation.active_kid names a listed key; every signed object observed in the run carries the active kid; revocation_bound_s ≤ profile bound; the remote-session policy is declared",
+      "title": "Keys: every key is an Ed25519 OKP JWK; federation.active_kid names a listed key; every signed object observed in the run carries the active kid; revocation_bound_s ≤ profile bound; the declared remote_session_policy is pause with after_s ≤ parameters.remote_session_policy.after_s_max",
       "traces": [
         "R-CORE-21",
         "R-CORE-34",
         "R-FED-20",
-        "R-FED-21"
+        "R-FED-21",
+        "R-FED-21a"
       ],
       "expect": "active kid used by claims, grants, revocations",
       "since": "0.0.2",

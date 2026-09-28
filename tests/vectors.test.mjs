@@ -93,7 +93,9 @@ test("Schemas, vectors, and profile regenerate byte-identically (into a temp dir
     ...readdirSync(join(ROOT, "vectors")).map((f) => [join(ROOT, "vectors", f), join(tmp, "vectors", f)]),
     ...readdirSync(join(ROOT, "profile")).map((f) => [join(ROOT, "profile", f), join(tmp, "profile", f)]),
   ];
-  assert.equal(readdirSync(join(tmp, "schemas")).length, readdirSync(join(ROOT, "specifications", "schemas")).length, "schema file set differs");
+  // complete file SETS must match (a missing checked-in artifact fails), then contents
+  for (const [mine, fresh] of [[join(ROOT, "specifications", "schemas"), join(tmp, "schemas")], [join(ROOT, "vectors"), join(tmp, "vectors")], [join(ROOT, "profile"), join(tmp, "profile")]])
+    assert.deepEqual(readdirSync(mine).sort(), readdirSync(fresh).sort(), `file set of ${mine} differs from regeneration`);
   for (const [checkedIn, fresh] of pairs) assert.equal(readFileSync(checkedIn, "utf8"), readFileSync(fresh, "utf8"), `${checkedIn} differs from regeneration`);
   rmSync(tmp, { recursive: true, force: true });
 });
