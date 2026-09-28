@@ -28,7 +28,8 @@ mkdirSync(out, { recursive: true });
 const profile = JSON.parse(readFileSync(join(PC_ROOT, "profile", "pc-0.1-s1.json"), "utf8"));
 const profileHash = sha256Hex(canonicalBytes(profile));
 const scenarios = profile.scenarios.filter((s) => !args.scenarios || args.scenarios.split(",").includes(s.id));
-const order = gate === "SG-2" ? SG2_ORDER : [...SG2_ORDER, ...SG3_ORDER];
+// --also runs named later-gate tests alongside SG-2 (e.g. reruns required by an SCR ruling), nothing else
+const also = args.also ? args.also.split(",") : [];
 const ALL = { ...TESTS, ...SG3_TESTS };
 const byId = Object.fromEntries(profile.tests.map((t) => [t.id, t]));
 const log = (...m) => console.error(`[runner ${new Date().toISOString().slice(11, 19)}]`, ...m);
@@ -75,8 +76,9 @@ for (const sc of scenarios) {
       observe: (node, kid) => (observedKids[node] ??= new Set()).add(kid),
     };
     ctx.resultOf = (id) => results.find((x) => x.test_id === id && x.scenario === sc.id && x.repetition === rep)?.status;
-    if (gate !== "SG-2") await SG3_TESTS.__setup(ctx);
+    if (gate !== "SG-2" || also.length) await SG3_TESTS.__setup(ctx);
     await runTests(ctx, SG2_ORDER);
+    if (gate === "SG-2" && also.length) await runTests(ctx, SG3_ORDER.filter((id) => also.includes(id)));
     if (gate !== "SG-2") {
       // admitted as soon as peering exists, so that one wait covers every short-TTL grant in the run
       try {

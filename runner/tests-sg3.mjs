@@ -169,10 +169,16 @@ export const SG3_TESTS = {
     const d = expectOk(await http("GET", `${ctx.host.base}/ilp/v1/federation/events`), 200, "host directory");
     const agg = expectOk(await http("GET", `${ctx.home.base}/ilp/v1/federation/events?scope=aggregated`), 200, "home aggregated directory");
     for (const g of hidden) check(!d.items.some((x) => x.global_id === g) && !agg.items.some((x) => x.global_id === g), `control event ${g} crossed the boundary`);
-    return { hidden: hidden.length };
+    // SCR-9: the private control event is invisible to an unauthenticated caller
+    const P = ctx.events.E_private;
+    expectProblem(await http("GET", `${ctx.host.base}/ilp/v1/events/${P.id}/feed?since=0`), "NOT_FOUND", "private event feed");
+    expectProblem(await http("GET", `${ctx.host.base}/ilp/v1/events/${P.id}/receipts`), "NOT_FOUND", "private event receipts");
+    expectProblem(await http("POST", `${ctx.host.base}/ilp/v1/events/${P.id}/join-requests`, { body: {} }), "NOT_FOUND", "join to a private event");
+    return { hidden: hidden.length, private_probes: 3 };
   },
   async "PC-DIR-3"(ctx) {
     const agg = expectOk(await http("GET", `${ctx.home.base}/ilp/v1/federation/events?scope=aggregated`), 200, "home aggregated directory");
+    for (const x of agg.items) schemaOk("directory-entry", x, `aggregated entry ${x.global_id}`); // SCR-9: strict, nothing re-emitted
     const e = agg.items.find((x) => x.global_id === ctx.events.E1.global_id);
     check(e, "host event missing from the home's aggregated directory");
     check(e.home.host === hostOf(ctx.host.base), "aggregated entry not labeled with its home");
@@ -221,6 +227,9 @@ export const SG3_TESTS = {
     const [h, p, s] = ctx.grant.split(".");
     const tampered = `${h}.${b64u.encode(Buffer.from(b64u.decode(p).toString("utf8").replace('"participant"', '"participanu"'), "utf8"))}.${s}`;
     expectProblem(await act(ctx.host, E2, ctx.token, proposal("x-event tampered"), { "ilp-grant": tampered }), "SIGNATURE_INVALID", "tampered grant on another event (precedence)");
+    // SCR-9: a grant from another host, with the cross-event token → 4a (audience) precedes 5
+    const foreign = await admit(ctx, { ...ctx.auxEvent, key: "aux" }, { hostNode: ctx.aux, operator: await ctx.aux.credential("operator", ctx.auxEvent.id), label: "foreign-x" });
+    expectProblem(await act(ctx.host, E2, ctx.token, proposal("x-event foreign"), { "ilp-grant": foreign.grant }), "GRANT_AUDIENCE_MISMATCH", "foreign grant on another event (precedence)");
     await expectNoSideEffects(ctx.host, E2.id, before, "cross-event");
     return { reported: "GRANT_EVENT_MISMATCH" };
   },

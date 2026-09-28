@@ -4,7 +4,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { canonicalBytes } from "../lib/jcs.mjs";
 import { decodeJws, JwsError, sha256B64u, sha256Hex, signDetached, signJws, TYP, verifyJws } from "../lib/jws.mjs";
 import { GENESIS_HASH, receiptHash } from "../lib/receipt.mjs";
-import { validateLenient } from "../lib/schemas.mjs";
+import { receiveLenient, validateLenient } from "../lib/schemas.mjs";
 import { Problem } from "./http.mjs";
 
 const SPEC_VERSIONS = ["0.0.2"];
@@ -95,6 +95,17 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
     return r;
   }
 
+  /** A private event is visible only to its own participants (token for it), its operator credential, or the admin. */
+  function visibleEvent(ref, headers) {
+    const ev = eventByRef(ref);
+    if (ev.visibility !== "private") return ev;
+    const bearer = (headers.authorization ?? "").replace(/^Bearer\s+/i, "");
+    const t = bearer ? tokens.get(tokenHash(bearer)) : null;
+    const c = bearer ? credentials.get(tokenHash(bearer)) : null;
+    if ((adminToken && bearer === adminToken) || (t && !t.revoked && t.event === ev.id) || (c && !c.revoked && c.kind === "operator" && c.event === ev.id)) return ev;
+    throw new Problem("NOT_FOUND", `event ${ref}`);
+  }
+
   function eventByRef(ref) {
     const id = ref.startsWith("ilp:") ? ref.split(":")[3] : ref;
     const ev = events.get(id) ?? [...events.values()].find((e) => e.slug === ref);
@@ -140,7 +151,8 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
     if (peerHost !== hostOf(peerBase)) throw new Problem("VALIDATION_FAILED", "discovery instance.host does not match base_url host");
     const existing = peers.get(peerHost);
     const p = {
-      host: peerHost, base_url: peerBase, state: "active", discovery: doc, keys: doc.keys, spec_versions: doc.spec_versions,
+      // re-adding a suspended peer refreshes discovery but never lifts the suspension (only reinstate does)
+      host: peerHost, base_url: peerBase, state: existing?.state === "suspended" ? "suspended" : "active", discovery: doc, keys: doc.keys, spec_versions: doc.spec_versions,
       updated_at: iso(), last_good_refresh_ms: existing?.last_good_refresh_ms ?? 0, last_seq: existing?.last_seq ?? 0, revoked: existing?.revoked ?? new Set(),
       bound_s: doc.federation.revocation_bound_s,
     };
@@ -549,7 +561,11 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
       await Promise.all([...peers.values()].filter((p) => p.state === "active").map(async (p) => {
         try {
           const d = await fetchJson(`${p.base_url}/ilp/v1/federation/events`, 3000);
-          for (const e of d.items ?? []) if (e?.home?.host === p.host && validateLenient("directory-entry", e).ok) remote.push(e);
+          for (const raw of (Array.isArray(d.items) ? d.items : []).slice(0, 500)) {
+            // emit only the pruned, strictly valid entry — never the peer's raw object (R-FED-13, R-CORE-39)
+            const r = receiveLenient("directory-entry", raw);
+            if (r.ok && r.value.home.host === p.host && r.value.global_id.split(":")[1] === p.host) remote.push(r.value);
+          }
         } catch (e) {
           log(`directory: peer ${p.host} unavailable: ${e.message}`);
         }
@@ -567,6 +583,7 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
     // join (§10.4)
     ["POST", "/ilp/v1/events/:ref/join-requests", async ({ params, body }) => {
       const ev = eventByRef(params.ref);
+      if (ev.visibility === "private") throw new Problem("NOT_FOUND", `event ${params.ref}`); // does not exist to a remote requester
       if (typeof body.claim !== "string") throw new Problem("VALIDATION_FAILED", "claim is required");
       let decoded;
       try {
@@ -706,12 +723,12 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
       if (idem) ev.idempotency.set(`${t.principal}|${idem}`, result);
       return { status: 201, body: result };
     }],
-    ["GET", "/ilp/v1/events/:ref/feed", ({ params, query }) => {
-      const ev = eventByRef(params.ref);
+    ["GET", "/ilp/v1/events/:ref/feed", ({ params, query, headers }) => {
+      const ev = visibleEvent(params.ref, headers);
       const since = Number.parseInt(query.since ?? "0", 10) || 0;
       return { body: { items: ev.feed.filter((f) => f.seq > since), next_cursor: null, latest_seq: ev.feed.length } };
     }],
-    ["GET", "/ilp/v1/events/:ref/receipts", ({ params }) => ({ body: { items: eventByRef(params.ref).receipts, next_cursor: null } })],
+    ["GET", "/ilp/v1/events/:ref/receipts", ({ params, headers }) => ({ body: { items: visibleEvent(params.ref, headers).receipts, next_cursor: null } })],
 
     // grants (R-AUTHZ-9, R-AUTHZ-12)
     ["GET", "/ilp/v1/grants/:id/status", ({ params }) => {

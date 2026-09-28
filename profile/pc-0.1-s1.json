@@ -519,10 +519,11 @@
       "gate": "SG-3",
       "role": "host",
       "severity": "blocker",
-      "title": "A private control event and a non-federated control event never appear in the directory, locally or aggregated",
+      "title": "A private control event and a non-federated control event never appear in the directory, locally or aggregated. The private control event's feed and receipts return NOT_FOUND to an unauthenticated caller, and a join request to it returns NOT_FOUND. (SCR-9)",
       "traces": [
         "R-FED-19",
-        "R-FED-17"
+        "R-FED-17",
+        "R-CORE-24"
       ],
       "expect": "absent",
       "since": "0.0.2",
@@ -533,9 +534,11 @@
       "gate": "SG-3",
       "role": "home",
       "severity": "major",
-      "title": "The home aggregates its active peer's directory: the host's event appears with the same global ID and is labeled with its home host",
+      "title": "The home aggregates its active peer's directory: the host's event appears with the same global ID and is labeled with its home host. Every aggregated entry validates against the strict directory-entry schema (no member outside the schema is re-emitted). (SCR-9)",
       "traces": [
-        "R-FED-6"
+        "R-FED-6",
+        "R-FED-19",
+        "R-FED-13"
       ],
       "expect": "aggregated entry equal on identifying members",
       "since": "0.0.2",
@@ -593,7 +596,7 @@
       "gate": "SG-2",
       "role": "host",
       "severity": "blocker",
-      "title": "Claim validation: a replayed claim is rejected with CLAIM_REPLAYED; a claim for another audience with CLAIM_AUDIENCE_MISMATCH; an expired claim with CLAIM_EXPIRED; a tampered claim with SIGNATURE_INVALID",
+      "title": "Claim validation: a replayed claim is rejected with CLAIM_REPLAYED; a claim for another audience with CLAIM_AUDIENCE_MISMATCH; an expired claim with CLAIM_EXPIRED; a tampered claim with SIGNATURE_INVALID. A claim that is both tampered and addressed to another audience is rejected with SIGNATURE_INVALID (signature, §10.4 step 4.2, precedes audience, 4.3). Two concurrent submissions of one fresh claim yield exactly one 202; the other is rejected with CLAIM_REPLAYED. (SCR-9)",
       "traces": [
         "R-FED-14",
         "R-ID-18",
@@ -726,12 +729,13 @@
       "gate": "SG-3",
       "role": "host",
       "severity": "blocker",
-      "title": "A token and grant issued for event E1 used against event E2 on the same host is rejected with GRANT_EVENT_MISMATCH, with no side effects",
+      "title": "A token and grant issued for event E1 used against event E2 on the same host is rejected with GRANT_EVENT_MISMATCH, with no side effects. With the same cross-event token, a presented grant with an altered byte is rejected with SIGNATURE_INVALID and a grant from another host with GRANT_AUDIENCE_MISMATCH (step 4a precedes step 5). (SCR-9)",
       "traces": [
         "R-AUTHZ-7",
         "R-AUTHZ-17",
         "R-CORE-29",
-        "R-AUTHZ-11"
+        "R-AUTHZ-11",
+        "R-AUTHZ-15"
       ],
       "expect": "GRANT_EVENT_MISMATCH",
       "since": "0.0.2",
