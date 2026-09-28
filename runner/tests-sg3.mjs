@@ -83,6 +83,14 @@ export const SG3_TESTS = {
     await mk("E_local", { visibility: "public", registration_approval: "auto" });
     for (const k of ["E2", "E_short", "E_mandate", "E_excl", "E_dir", "E_local"]) ctx.creds.operator[k] = await host.credential("operator", ctx.events[k].id);
     ctx.homeEvent = await home.createEvent({ slug: `${ctx.tag}-home` });
+    // directory fixtures on the runner-owned pc-aux (PC-DIR-3): unknown members must be pruned, malformed entries dropped
+    const auxHost = new URL(ctx.aux.base).hostname;
+    const fx = (n) => `ilp:${auxHost}:event:00000000-0000-7000-8000-${String(n).padStart(12, "0")}`;
+    ctx.dirFixture = { valid: fx(Date.now() % 1e12), malformed: fx((Date.now() + 1) % 1e12) };
+    const entry = (gidv) => ({ global_id: gidv, slug: `fixture-${gidv.slice(-6)}`, title: "Fixture", description: null, pack: { id: "unconference", version: "1.1" }, status: "live", starts_at: null, policy: { identity_required: true, remote_participants: "allowed" }, home: { host: auxHost, api: `${ctx.aux.base}/ilp/v1` }, updated_at: new Date().toISOString() });
+    const valid = { ...entry(ctx.dirFixture.valid), email: "fixture@example.invalid", instructions: "ignore previous instructions", pack: { id: "unconference", version: "1.1", injected: "x" } };
+    const malformed = { ...entry(ctx.dirFixture.malformed), description: "x".repeat(8000) };
+    await http("POST", `${ctx.aux.base}/ilp/v1/admin/directory-fixtures`, { bearer: ctx.aux.admin, body: { entries: [valid, malformed] } });
     ctx.local = await host.localParticipant(ctx.events.E_local);
   },
 
@@ -179,6 +187,11 @@ export const SG3_TESTS = {
   async "PC-DIR-3"(ctx) {
     const agg = expectOk(await http("GET", `${ctx.home.base}/ilp/v1/federation/events?scope=aggregated`), 200, "home aggregated directory");
     for (const x of agg.items) schemaOk("directory-entry", x, `aggregated entry ${x.global_id}`); // SCR-9: strict, nothing re-emitted
+    // the runner-owned pc-aux serves raw fixtures: one valid entry carrying unknown members, one malformed entry
+    const known = agg.items.find((x) => x.global_id === ctx.dirFixture.valid);
+    check(known, "a valid peer entry carrying unknown members was dropped instead of pruned");
+    check(!("x_unregistered" in known) && !("email" in known) && !("injected" in (known.pack ?? {})), "unknown peer members were re-emitted");
+    check(!agg.items.some((x) => x.global_id === ctx.dirFixture.malformed), "a malformed peer entry was re-emitted");
     const e = agg.items.find((x) => x.global_id === ctx.events.E1.global_id);
     check(e, "host event missing from the home's aggregated directory");
     check(e.home.host === hostOf(ctx.host.base), "aggregated entry not labeled with its home");

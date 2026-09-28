@@ -4,7 +4,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { canonicalBytes } from "../lib/jcs.mjs";
 import { decodeJws, JwsError, sha256B64u, sha256Hex, signDetached, signJws, TYP, verifyJws } from "../lib/jws.mjs";
 import { GENESIS_HASH, receiptHash } from "../lib/receipt.mjs";
-import { receiveLenient, validateLenient } from "../lib/schemas.mjs";
+import { receiveLenient, validate, validateLenient } from "../lib/schemas.mjs";
 import { Problem } from "./http.mjs";
 
 const SPEC_VERSIONS = ["0.0.2"];
@@ -51,6 +51,7 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
   const seenClaims = new Set();
   const revocationsOut = []; // {seq, jws, payload}
   const joinRequests = new Map(); // gid -> {...}
+  const directoryFixtures = []; // runner-owned test node only: raw entries served as-is, to exercise peers' input handling
 
   // ---- helpers ----
   function requireCredential(headers, kinds, eventId) {
@@ -129,10 +130,19 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
   }
 
   // ---- peers and revocation state ----
+  // federation input is untrusted and size-limited (R-FED-13): stop reading past the cap, before parsing
+  const MAX_PEER_BODY = 1024 * 1024;
   async function fetchJson(url, timeoutMs = 5000) {
     const res = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) });
     if (!res.ok) throw new Error(`${url} -> ${res.status}`);
-    return res.json();
+    const chunks = [];
+    let n = 0;
+    for await (const c of res.body) {
+      n += c.length;
+      if (n > MAX_PEER_BODY) throw new Error(`${url} -> body over ${MAX_PEER_BODY} bytes`);
+      chunks.push(c);
+    }
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
   }
 
   async function addPeer(peerBase) {
@@ -193,13 +203,19 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
 
   async function refreshPeer(p) {
     let since = p.last_seq;
-    for (let page = 0; page < 50; page++) {
+    let latest = null;
+    for (let page = 0; page < 1000; page++) {
       const feed = await fetchJson(`${p.base_url}/ilp/v1/federation/revocations?since=${since}`);
+      if (!validate("revocation-feed", feed).ok) throw new Error(`malformed revocation feed from ${p.host}`);
+      latest = feed.latest_seq;
       for (const item of feed.items) {
         let payload;
         try {
           ({ payload } = verifyJws(item.jws, (kid) => resolvePeerKey(p.host, kid), { typ: TYP.revocation }));
           if (hostOf(payload.iss) !== p.host) throw new Error("iss is not the peer");
+          const rv = receiveLenient("revocation-record", payload);
+          if (!rv.ok) throw new Error(`record invalid: ${rv.errors.slice(0, 2).join("; ")}`);
+          if (payload.seq !== item.seq || payload.seq <= since) throw new Error("seq out of order");
         } catch (e) {
           // incomplete revocation state: do not advance last_seq or freshness (fail closed, R-FED-21)
           throw new Error(`unverifiable revocation record seq ${item.seq} from ${p.host}: ${e.message}`);
@@ -208,9 +224,18 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
         since = Math.max(since, payload.seq);
       }
       p.last_seq = since;
-      if (!feed.items.length || feed.next_cursor === null) break;
+      if (since >= latest || !feed.items.length) break;
     }
+    // fresh only when the whole advertised feed has been consumed (R-FED-21: incomplete state fails closed)
+    if (latest === null || since < latest) throw new Error(`revocation feed from ${p.host} not consumed through latest_seq ${latest}`);
     p.last_good_refresh_ms = Date.now();
+  }
+
+  /** A subject the home has revoked is ineligible for admission and for first credential delivery (R-ID-19, R-FED-10). */
+  function subjectRevoked(home, { sub, agent, plate, claim_jti }) {
+    const p = peers.get(home);
+    if (!p) return true;
+    return p.revoked.has(`human:${sub}`) || (claim_jti && p.revoked.has(`claim:${claim_jti}`)) || (agent && p.revoked.has(`agent:${agent}`)) || (plate && p.revoked.has(`plate:${plate}`));
   }
 
   function applyPeerRevocation(p, rec) {
@@ -370,14 +395,15 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
     return g;
   }
 
-  function evaluate(ref, headers, body) {
+  function evaluate(ref, headers, body, idem = null) {
     // step 0: the whole envelope
     if (typeof body.kind !== "string" || !/^[a-z][a-z0-9_-]*\.[a-z][a-z0-9_]*$/.test(body.kind)) throw new Problem("VALIDATION_FAILED", "kind is required");
     if (body.payload !== undefined && (typeof body.payload !== "object" || body.payload === null || Array.isArray(body.payload))) throw new Problem("VALIDATION_FAILED", "payload must be an object");
     if (body.mandate !== undefined && !MANDATES.includes(body.mandate)) throw new Problem("VALIDATION_FAILED", "mandate is not in the registry");
     if (body.expect_phase !== undefined && typeof body.expect_phase !== "string") throw new Problem("VALIDATION_FAILED", "expect_phase must be a string");
     if (body.target_action !== undefined && typeof body.target_action !== "string") throw new Problem("VALIDATION_FAILED", "target_action must be a string");
-    const extra = Object.keys(body).filter((k) => !["kind", "payload", "mandate", "expect_phase", "target_action"].includes(k));
+    if (body.intent !== undefined && (typeof body.intent !== "string" || body.intent.length > 2000)) throw new Problem("VALIDATION_FAILED", "intent must be a string of at most 2000 characters");
+    const extra = Object.keys(body).filter((k) => !["kind", "payload", "mandate", "expect_phase", "target_action", "intent"].includes(k));
     if (extra.length) throw new Problem("VALIDATION_FAILED", `unknown member ${extra[0]}`);
     const mandate = body.mandate ?? "human_directed";
     // steps 1/1a
@@ -397,6 +423,11 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
     if (reg && reg.status === "pending") throw new Problem("FORBIDDEN", "registration pending", { code_detail: "PENDING_APPROVAL" });
     // steps 4a–6
     const g = grantChecks(ev, t, bearer, headers, body.kind, mandate);
+    // an authorized retry returns its original result before any rule for a NEW action applies (R-CORE-16)
+    if (idem) {
+      const prior = ev.idempotency.get(`${t.principal}|${idem}`);
+      if (prior) return { ev, t, g, mandate, prior };
+    }
     // step 7: status, phase, expect_phase
     const at = ACTIONS[body.kind];
     if (!at) throw new Problem("VALIDATION_FAILED", `unknown action kind ${body.kind}`);
@@ -481,6 +512,14 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
       return { status: 201, body: { attestation: signJws(payload, key, TYP.attestation) } };
     }],
 
+    // TEST FIXTURE (admin only, runner-owned node): raw directory entries this node serves as-is
+    ["POST", "/ilp/v1/admin/directory-fixtures", ({ headers, body }) => {
+      requireAdmin(headers);
+      if (!Array.isArray(body.entries)) throw new Problem("VALIDATION_FAILED", "entries must be an array");
+      directoryFixtures.push(...body.entries.slice(0, 50));
+      return { status: 201, body: { fixtures: directoryFixtures.length } };
+    }],
+
     // synthetic principals (SCR-1, R-CONF-6)
     ["POST", "/ilp/v1/admin/synthetic/humans", ({ headers, body }) => {
       requireCredential(headers, ["provisioning"]);
@@ -517,7 +556,13 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
       if (human.revoked) throw new Problem("AUTH_REVOKED", "subject revoked");
       if (body.purpose !== "event_join") throw new Problem("VALIDATION_FAILED", "purpose must be event_join");
       if (typeof body.aud !== "string" || typeof body.event !== "string") throw new Problem("VALIDATION_FAILED", "aud and event are required");
-      const p = peers.get(hostOf(body.aud));
+      let audHost;
+      try {
+        audHost = hostOf(body.aud);
+      } catch {
+        throw new Problem("VALIDATION_FAILED", "aud must be the host base URL");
+      }
+      const p = peers.get(audHost);
       if (!p || p.state !== "active") throw new Problem("NOT_A_PEER", "audience is not an active peer");
       if (body.event.split(":")[1] !== p.host) throw new Problem("VALIDATION_FAILED", "event is not homed on the audience host");
       let agent = null;
@@ -533,6 +578,9 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
         jti: `claim-${randomUUID()}`, display_name: human.display_name, verified: true, verified_method: "synthetic",
         agent, purpose: "event_join", event: body.event, consent_accepted: body.consent_accepted ?? null,
       };
+      // never sign a claim that is not valid under the strict schema (R-CORE-39(a))
+      const out = validate("identity-claim", payload);
+      if (!out.ok) throw new Problem("VALIDATION_FAILED", `claim would be invalid: ${out.errors.slice(0, 2).join("; ")}`);
       return { status: 201, body: { claim: signJws(payload, key, TYP.claim), jti: payload.jti, exp: payload.exp } };
     }],
 
@@ -556,7 +604,7 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
         status: e.status, starts_at: e.starts_at, policy: { identity_required: true, remote_participants: e.remote_participants },
         home: { host, api: `${baseUrl}/ilp/v1` }, updated_at: e.updated_at,
       }));
-      if (query.scope !== "aggregated") return { body: { items: own, next_cursor: null } };
+      if (query.scope !== "aggregated") return { body: { items: [...own, ...directoryFixtures], next_cursor: null } };
       const remote = [];
       await Promise.all([...peers.values()].filter((p) => p.state === "active").map(async (p) => {
         try {
@@ -576,8 +624,10 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
     // revocations (R-FED-10)
     ["GET", "/ilp/v1/federation/revocations", ({ query }) => {
       const since = Number.parseInt(query.since ?? "0", 10) || 0;
-      const items = revocationsOut.filter((r) => r.seq > since).slice(0, 200).map((r) => ({ seq: r.seq, jws: r.jws }));
-      return { body: { items, next_cursor: null, latest_seq: revocationsOut.length } };
+      const all = revocationsOut.filter((r) => r.seq > since);
+      const items = all.slice(0, 200).map((r) => ({ seq: r.seq, jws: r.jws }));
+      // truthful continuation: a cursor whenever more records remain (clients page with since=<last seq>)
+      return { body: { items, next_cursor: all.length > items.length ? String(items.at(-1).seq) : null, latest_seq: revocationsOut.length } };
     }],
 
     // join (§10.4)
@@ -609,8 +659,13 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
         if (!(e instanceof JwsError)) throw e;
         if (e.code === "UNKNOWN_SIGNER") {
           try {
+            // replace trusted keys only with a fully valid discovery document for the same host
             const doc = await fetchJson(`${p.base_url}/.well-known/interlateral.json`);
-            p.keys = doc.keys;
+            const dv = receiveLenient("discovery", doc);
+            if (dv.ok && dv.value.instance.host === p.host) {
+              p.keys = dv.value.keys;
+              p.discovery = dv.value;
+            }
           } catch {}
           try {
             verifyJws(body.claim, (kid) => resolvePeerKey(p.host, kid), { typ: TYP.claim });
@@ -643,12 +698,16 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
       if (!peerFresh(p)) throw new Problem("REVOCATION_STATE_UNKNOWN", "home revocation state cannot be established", { retry_after: revocationBoundS });
       if (p.revoked.has(`claim:${c.jti}`) || p.revoked.has(`human:${c.sub}`) || (c.agent && (p.revoked.has(`agent:${c.agent.id}`) || p.revoked.has(`plate:${c.agent.license_plate}`)))) throw new Problem("SUBJECT_REVOKED");
       if (c.event !== ev.gid) throw new Problem("VALIDATION_FAILED", "claim is for another event");
+      // identity evidence binds only the attesting home's own principals
+      if (hostOfGid(c.sub) !== p.host || (c.agent && hostOfGid(c.agent.id) !== p.host)) throw new Problem("VALIDATION_FAILED", "claim subject or agent is not homed on the issuing peer");
+      const existing = ev.registrations.get(c.sub);
+      if (existing && existing.status !== "rejected") throw new Problem("CONFLICT", `a registration for this principal is already ${existing.status}`);
       if (ev.visibility !== "federated" || ev.remote_participants !== "allowed") throw new Problem("FORBIDDEN", "event does not admit remote participants");
       accepted = true;
       // shadow principal (keyed by home global ID; no email) + pending registration
       const jr = {
         gid: gid("join_request"), event: ev.id, status: "pending", subject: c.sub, agent: c.agent?.id ?? null, plate: c.agent?.license_plate ?? null,
-        display_name: c.display_name, home: p.host, claim_jti: c.jti, consent: c.consent_accepted ?? body.consent_accepted ?? null,
+        display_name: c.display_name, home: p.host, claim_jti: c.jti, claim_jws: body.claim, consent: c.consent_accepted ?? body.consent_accepted ?? null,
         retrieval_hash: null, grant: null, token_delivered: false,
       };
       const retrieval = random("ilpr_");
@@ -656,6 +715,7 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
       joinRequests.set(jr.gid, jr);
       ev.registrations.set(c.sub, { status: "pending", remote: true, join_request: jr.gid });
       appendFeed(ev, "join_request.received", jr.gid, "remote join request pending", { home: p.host });
+      appendReceipt(ev, { action_kind: "federation.join_requested", subject_human: jr.subject, subject_agent: jr.agent, license_plate: jr.plate, resource: jr.gid });
       return { status: 202, body: { join_request_id: jr.gid, status: "pending", retrieval_key: retrieval } };
       } finally {
         if (!accepted) seenClaims.delete(c.jti);
@@ -676,6 +736,17 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
       const base = { join_request_id: jr.gid, event: ev.gid, status: jr.status, subject: jr.subject };
       if (jr.status !== "approved") return { body: base };
       if (jr.token_delivered) return { body: { ...base, grant: grants.get(jr.grant).jws, token_delivered: true } };
+      // a home revocation that arrived after approval blocks first delivery (R-ID-19)
+      const hp = peers.get(jr.home);
+      if (!hp || hp.state !== "active") throw new Problem("PEER_SUSPENDED");
+      if (!peerFresh(hp)) throw new Problem("REVOCATION_STATE_UNKNOWN", "home revocation state is stale", { retry_after: revocationBoundS });
+      if (subjectRevoked(jr.home, { sub: jr.subject, agent: jr.agent, plate: jr.plate, claim_jti: jr.claim_jti })) {
+        jr.status = "rejected";
+        ev.registrations.get(jr.subject).status = "revoked";
+        appendFeed(ev, "join_request.revoked", jr.gid, "home revoked the subject before delivery");
+        appendReceipt(ev, { action_kind: "federation.join_revoked", subject_human: jr.subject, subject_agent: jr.agent, license_plate: jr.plate, resource: jr.gid });
+        throw new Problem("SUBJECT_REVOKED");
+      }
       // SCR-7: token and grant are minted together at the first authenticated retrieval; only the hash is kept
       const { t, token } = mintToken(ev, { principal: jr.subject, agent: jr.agent, plate: jr.plate, remote: true, home: jr.home, claim_jti: jr.claim_jti });
       const g = issueGrant(ev, t, token);
@@ -693,11 +764,14 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
         jr.status = "rejected";
         ev.registrations.get(jr.subject).status = "rejected";
         appendFeed(ev, "join_request.rejected", jr.gid, "remote join rejected");
+        appendReceipt(ev, { action_kind: "federation.join_rejected", subject_human: jr.subject, subject_agent: jr.agent, license_plate: jr.plate, resource: jr.gid });
         return { body: { join_request_id: jr.gid, status: "rejected" } };
       }
       if (params.verdict !== "approve") throw new Problem("NOT_FOUND");
       const p = peers.get(jr.home);
       if (!p || p.state !== "active") throw new Problem("PEER_SUSPENDED");
+      if (!peerFresh(p)) throw new Problem("REVOCATION_STATE_UNKNOWN", "home revocation state is stale", { retry_after: revocationBoundS });
+      if (subjectRevoked(jr.home, { sub: jr.subject, agent: jr.agent, plate: jr.plate, claim_jti: jr.claim_jti })) throw new Problem("SUBJECT_REVOKED");
       jr.status = "approved";
       ev.registrations.get(jr.subject).status = "active";
       appendFeed(ev, "join_request.approved", jr.gid, "remote join approved");
@@ -708,11 +782,8 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
     // governed actions
     ["POST", "/ilp/v1/events/:ref/actions", ({ headers, params, body }) => {
       const idem = headers["idempotency-key"];
-      const { ev, t, g, mandate, target } = evaluate(params.ref, headers, body);
-      if (idem) {
-        const prior = ev.idempotency.get(`${t.principal}|${idem}`);
-        if (prior) return { status: 200, body: { ...prior, duplicate: true } };
-      }
+      const { ev, t, g, mandate, target, prior } = evaluate(params.ref, headers, body, idem);
+      if (prior) return { status: 200, body: { ...prior, duplicate: true } };
       // build every record first (anything that can fail fails here); then mutate all together (R-AUTHZ-11)
       const action = { id: gid("action"), kind: body.kind, payload: body.payload ?? {}, subject_human: t.principal, subject_agent: t.agent, license_plate: t.plate, mandate, authorization_grant: g.jti, target: target?.id ?? null, occurred_at: iso() };
       const receipt = buildReceipt(ev, { action_kind: body.kind, subject_human: t.principal, subject_agent: t.agent, license_plate: t.plate, mandate, source_class: "agent_token_api", authorization_grant: g.jti, resource: action.id });
@@ -768,7 +839,8 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
         "feed.jsonl": jsonl(ev.feed),
         "grants.jsonl": jsonl(evGrants.map((g) => ({ jti: g.jti, jws: g.jws, status: g.status, changed_at: g.changed_at }))),
         "revocations.jsonl": jsonl(revocationsOut.map((r) => ({ seq: r.seq, jws: r.jws }))),
-        "claims.jsonl": jsonl([...joinRequests.values()].filter((j) => j.event === ev.id).map((j) => ({ jti: j.claim_jti, iss_host: j.home, sub: j.subject, agent: j.agent, consent_accepted: j.consent }))),
+        // SCR-8: the signed identity claim, identifiable by its jti and sub (claims carry no email)
+        "claims.jsonl": jsonl([...joinRequests.values()].filter((j) => j.event === ev.id).map((j) => ({ jti: j.claim_jti, sub: j.subject, iss_host: j.home, claim: j.claim_jws, join_request: j.gid, status: j.status }))),
       };
       const manifest = signDetached({
         format: "ilp-export/1", event: ev.gid, created_at: iso(), created_by: gid("human", "00000000-0000-7000-8000-000000000000"),

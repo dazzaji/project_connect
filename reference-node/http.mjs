@@ -31,14 +31,14 @@ function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let n = 0;
+    let over = false;
     req.on("data", (c) => {
       n += c.length;
-      if (n > MAX_BODY) {
-        reject(new Problem("PAYLOAD_TOO_LARGE", `body exceeds ${MAX_BODY} bytes`, { limit_bytes: MAX_BODY }));
-        req.destroy();
-      } else chunks.push(c);
+      // stop collecting but keep the connection, so the 413 problem document can be delivered (R-CORE-4)
+      if (n > MAX_BODY) over = true;
+      else chunks.push(c);
     });
-    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("end", () => (over ? reject(new Problem("PAYLOAD_TOO_LARGE", `body exceeds ${MAX_BODY} bytes`, { limit_bytes: MAX_BODY })) : resolve(Buffer.concat(chunks))));
     req.on("error", reject);
   });
 }

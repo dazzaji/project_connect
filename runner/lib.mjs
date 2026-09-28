@@ -2,6 +2,7 @@
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { validate as validateSchema } from "../lib/schemas.mjs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -29,6 +30,14 @@ export async function http(method, url, { body, bearer, headers = {} } = {}) {
 }
 
 const problems = []; // every negative response seen in the run (PC-CORE-1)
+
+// registered HTTP status per problem code, read from the specification's §17.2 table (the authority)
+const REGISTERED = (() => {
+  const text = readFileSync(join(PC_ROOT, "specifications", "ilp_spec.md"), "utf8");
+  const s = text.slice(text.indexOf("#### 17.2.1 Codes"), text.indexOf("#### 17.2.2"));
+  return Object.fromEntries([...s.matchAll(/^\| `([A-Z_]+)` \| (\d{3}) \|/gm)].map((m) => [m[1], Number(m[2])]));
+})();
+export const registeredStatus = (code) => REGISTERED[code];
 export const seenProblems = () => problems;
 
 /** Assert an RFC 9457 ILP problem with `code` (R-CORE-9). */
@@ -38,6 +47,14 @@ export function expectProblem(res, code, what) {
   const got = res.json.type.replace("urn:ilp:error:", "");
   const codes = [].concat(code);
   check(codes.includes(got), `${what}: expected ${codes.join(" | ")}, got ${got} (${res.json.detail ?? ""})`);
+  // the whole problem envelope, not just the type (R-CORE-9): registered status, media type, schema, title
+  check(REGISTERED[got] !== undefined, `${what}: ${got} is not a registered code (§17.2)`);
+  check(res.status === REGISTERED[got], `${what}: ${got} must be HTTP ${REGISTERED[got]}, got ${res.status}`);
+  check(res.json.status === res.status, `${what}: problem.status ${res.json.status} != HTTP ${res.status}`);
+  check(res.json.title === got, `${what}: problem.title ${res.json.title} != ${got}`);
+  check(res.contentType.startsWith("application/problem+json"), `${what}: content-type ${res.contentType}`);
+  const v = validateSchema("problem", res.json);
+  check(v.ok, `${what}: problem schema: ${v.errors.join("; ")}`);
   return res.json;
 }
 export function expectOk(res, status, what) {

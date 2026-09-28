@@ -130,6 +130,10 @@ export const TESTS = {
   async "PC-IDC-3"(ctx) {
     const { host, home, aux } = ctx;
     const E1 = ctx.events.E1;
+    // rejected claims must create no join request and change no event state (observed before/after)
+    const joins = async () => expectOk(await http("GET", `${host.base}/ilp/v1/events/${E1.id}/join-requests`, { bearer: ctx.creds.operator.E1 }), 200, "operator join list").items.length;
+    const joinsBefore = await joins();
+    const stateBefore = await observe(host, E1.id);
     expectProblem(await http("POST", `${host.base}/ilp/v1/events/${E1.id}/join-requests`, { body: { claim: ctx.claim } }), "CLAIM_REPLAYED", "replayed claim");
     // a claim legitimately minted by the home for another audience (pc-aux)
     const other = expectOk(await http("POST", `${home.base}/ilp/v1/claims`, { bearer: ctx.creds.provisioning, body: { purpose: "event_join", event: ctx.auxEvent.global_id, aud: aux.base, agent: ctx.subject.agent.id, on_behalf_of: ctx.subject.human } }), 201, "claim for another audience");
@@ -153,10 +157,14 @@ export const TESTS = {
     expectProblem(await http("POST", `${host.base}/ilp/v1/events/${E1.id}/join-requests`, { body: { claim: tamperedOther } }), "SIGNATURE_INVALID", "tampered claim for another audience (precedence)");
     // concurrent replay: one fresh claim submitted twice at once → exactly one acceptance
     const race = expectOk(await http("POST", `${home.base}/ilp/v1/claims`, { bearer: ctx.creds.provisioning, body: { purpose: "event_join", event: ctx.events.E1.global_id, aud: host.base, agent: null, on_behalf_of: (expectOk(await http("POST", `${home.base}/ilp/v1/admin/synthetic/humans`, { bearer: ctx.creds.provisioning, body: { display_name: `Race ${ctx.tag}` } }), 201, "race subject")).human } }), 201, "race claim").claim;
+    // every rejection above left no trace
+    check(await joins() === joinsBefore, "a rejected claim created a join request");
+    await expectNoSideEffects(host, E1.id, stateBefore, "rejected claims");
     const both = await Promise.all([0, 1].map(() => http("POST", `${host.base}/ilp/v1/events/${E1.id}/join-requests`, { body: { claim: race } })));
     const accepted = both.filter((r) => r.status === 202).length;
     check(accepted === 1, `concurrent replay: ${accepted} acceptances (want exactly 1)`);
     expectProblem(both.find((r) => r.status !== 202), "CLAIM_REPLAYED", "concurrent replay");
+    check(await joins() === joinsBefore + 1, "concurrent replay must persist exactly one join request");
     ctx.spareClaim = fresh.claim; // untouched original, unused so far
     return { replay: "CLAIM_REPLAYED", audience: "CLAIM_AUDIENCE_MISMATCH", expired: "CLAIM_EXPIRED", tampered: "SIGNATURE_INVALID" };
   },
