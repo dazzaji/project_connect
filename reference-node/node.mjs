@@ -28,14 +28,17 @@ const ACTIONS = {
     phases: ["voting"],
     roles: ["participant"],
     validate: (p) => p && Object.keys(p).length === 0,
+    target: "unconference.proposal",
     cap: 3,
   },
 };
 
-export function createNode({ baseUrl, name, key, build, deploymentId, adminToken, revocationBoundS = 60, fetchImpl = fetch, log = () => {} }) {
+export function createNode({ baseUrl, name, key, keyring = [key], build, deploymentId, adminToken, revocationBoundS = 60, fetchImpl = fetch, log = () => {} }) {
   const host = hostOf(baseUrl);
   const gid = (type, id = randomUUID()) => `ilp:${host}:${type}:${id}`;
-  const publicKey = { kid: key.kid, kty: "OKP", crv: "Ed25519", x: key.x, use: "sig" };
+  // every key in the keyring stays published and verifiable (R-CORE-21); only the active key signs (R-CORE-34(d))
+  const publicKeys = keyring.map((k) => ({ kid: k.kid, kty: "OKP", crv: "Ed25519", x: k.x, use: "sig", ...(k.not_after ? { not_after: k.not_after } : {}) }));
+  const ownKey = (kid) => publicKeys.find((k) => k.kid === kid) ?? null;
 
   // ---- state ----
   const credentials = new Map(); // hash -> {kind, event?}
@@ -77,14 +80,18 @@ export function createNode({ baseUrl, name, key, build, deploymentId, adminToken
     return rec;
   }
 
-  function appendReceipt(ev, { action_kind, subject_human, subject_agent = null, license_plate = null, mandate = "human_directed", source_class = "engine", authorization_grant, resource }) {
+  function appendReceipt(ev, fields) {
+    const r = buildReceipt(ev, fields);
+    ev.receipts.push(r);
+    return r;
+  }
+  function buildReceipt(ev, { action_kind, subject_human, subject_agent = null, license_plate = null, mandate = "human_directed", source_class = "engine", authorization_grant, resource }) {
     const r = {
       id: gid("receipt"), event: ev.gid, action_kind, subject_human, subject_agent, license_plate, mandate, source_class,
       ...(authorization_grant ? { authorization_grant } : {}),
       resource, occurred_at: iso(), prev_receipt_hash: ev.receipts.at(-1)?.hash ?? GENESIS_HASH,
     };
     r.hash = receiptHash(r);
-    ev.receipts.push(r);
     return r;
   }
 
@@ -102,7 +109,7 @@ export function createNode({ baseUrl, name, key, build, deploymentId, adminToken
       spec_versions: SPEC_VERSIONS,
       profiles: ["pc-0.1-s1"],
       instance: { host, name, operator_contact: `mailto:operator@${host}`, software: { name: "project-connect-reference-node", version: "0.0.2", build }, deployment_id: deploymentId },
-      keys: [publicKey],
+      keys: publicKeys,
       endpoints: { api: `${baseUrl}/ilp/v1`, federation: `${baseUrl}/ilp/v1/federation`, directory: `${baseUrl}/ilp/v1/federation/events`, revocations: `${baseUrl}/ilp/v1/federation/revocations` },
       packs: [{ id: "unconference", version: "1.1", compatible_versions: ["1.0"] }],
       federation: { mode: "allowlist", join_requests: true, revocation_bound_s: revocationBoundS, active_kid: key.kid, remote_session_policy: { on_stale_revocation_state: "pause", after_s: 2 * revocationBoundS } },
@@ -182,8 +189,8 @@ export function createNode({ baseUrl, name, key, build, deploymentId, adminToken
           ({ payload } = verifyJws(item.jws, (kid) => resolvePeerKey(p.host, kid), { typ: TYP.revocation }));
           if (hostOf(payload.iss) !== p.host) throw new Error("iss is not the peer");
         } catch (e) {
-          log(`peer ${p.host}: rejected revocation record seq ${item.seq}: ${e.message}`);
-          continue;
+          // incomplete revocation state: do not advance last_seq or freshness (fail closed, R-FED-21)
+          throw new Error(`unverifiable revocation record seq ${item.seq} from ${p.host}: ${e.message}`);
         }
         applyPeerRevocation(p, payload);
         since = Math.max(since, payload.seq);
@@ -236,7 +243,8 @@ export function createNode({ baseUrl, name, key, build, deploymentId, adminToken
     publishRevocation("grant", g.jti, reason?.slice(0, 200));
   }
 
-  function issueGrant(ev, t) {
+  // grant issuance needs the token (credential_binding); the token itself is never stored, only its hash (R-CORE-18)
+  function issueGrant(ev, t, token) {
     const iat = nowS();
     const exp = Math.min(iat + ev.grant_ttl_s, t.expires_s);
     const id = randomUUID();
@@ -248,7 +256,7 @@ export function createNode({ baseUrl, name, key, build, deploymentId, adminToken
       ...(ev.grant_exclusions.length ? { exclusions: ev.grant_exclusions } : {}),
       ...(ev.mandates_allowed ? { mandates_allowed: ev.mandates_allowed } : {}),
       iat, nbf: iat, exp,
-      credential_binding: { alg: "S256", value: sha256B64u(Buffer.from(t.token, "utf8")) },
+      credential_binding: { alg: "S256", value: sha256B64u(Buffer.from(token, "utf8")) },
       status: { uri: `${baseUrl}/ilp/v1/grants/${id}/status` },
       parent_grant: null,
     };
@@ -261,51 +269,52 @@ export function createNode({ baseUrl, name, key, build, deploymentId, adminToken
     return g;
   }
 
+  /** Mint a token: returns the token string once; the node keeps only its hash. */
   function mintToken(ev, { principal, agent, plate, remote, home, claim_jti }) {
     const token = random("ilpt_");
-    const t = { token, hash: tokenHash(token), event: ev.id, principal, agent, plate, remote, home, claim_jti, expires_s: nowS() + 7 * 86400 + 72 * 3600, revoked: false, grant: null };
+    const t = { hash: tokenHash(token), event: ev.id, principal, agent, plate, remote, home, claim_jti, expires_s: nowS() + 7 * 86400 + 72 * 3600, revoked: false, grant: null };
     tokens.set(t.hash, t);
-    return t;
+    return { t, token };
   }
 
-  // ---- enforcement (R-CORE-29) ----
-  function evaluate(ev, headers, body) {
-    // step 0: syntax
-    if (typeof body.kind !== "string") throw new Problem("VALIDATION_FAILED", "kind is required");
-    if (body.payload !== undefined && (typeof body.payload !== "object" || body.payload === null || Array.isArray(body.payload))) throw new Problem("VALIDATION_FAILED", "payload must be an object");
-    // step 1: credential
+  const MANDATES = ["human_directed", "human_approved", "standing_instruction", "agent_draft_unaccepted"];
+
+  // ---- enforcement: every reported error follows R-CORE-29, and nothing is written before all checks pass ----
+  function authenticate(headers) {
+    // steps 1 and 1a, independent of the requested event
     const bearer = (headers.authorization ?? "").replace(/^Bearer\s+/i, "");
     if (!bearer) throw new Problem("AUTH_MISSING");
     if (!bearer.startsWith("ilpt_")) {
       if (bearer.split(".").length === 3) {
-        // R-AUTHZ-16: a verifying identity claim is identity, never authority
-        let decoded;
+        let decoded = null;
         try {
           decoded = decodeJws(bearer);
-        } catch {
-          throw new Problem("AUTH_INVALID");
-        }
-        if (decoded.header.typ === TYP.claim) {
-          const p = peers.get(hostOf(String(decoded.payload.iss ?? "http://invalid")));
+        } catch {}
+        if (decoded?.header?.typ === TYP.claim) {
+          let issHost = null;
           try {
-            verifyJws(bearer, (kid) => (p ? resolvePeerKey(p.host, kid) : kid === key.kid ? publicKey : null), { typ: TYP.claim });
-          } catch {
-            throw new Problem("AUTH_INVALID", "credential is not a participant token");
-          }
-          throw new Problem("AUTHZ_REQUIRED", "an identity claim confers no authority (P11)");
+            issHost = hostOf(String(decoded.payload.iss));
+          } catch {}
+          const p = issHost ? peers.get(issHost) : null;
+          let ok = false;
+          try {
+            verifyJws(bearer, (kid) => (issHost === host ? ownKey(kid) : p ? resolvePeerKey(p.host, kid) : null), { typ: TYP.claim });
+            ok = true;
+          } catch {}
+          if (ok) throw new Problem("AUTHZ_REQUIRED", "an identity claim confers no authority (P11)");
         }
       }
-      throw new Problem("AUTH_INVALID");
+      throw new Problem("AUTH_INVALID", "credential is not a participant token");
     }
     const t = tokens.get(tokenHash(bearer));
     if (!t) throw new Problem("AUTH_INVALID");
     if (t.revoked) throw new Problem("AUTH_REVOKED");
     if (nowS() > t.expires_s) throw new Problem("AUTH_EXPIRED", undefined, { expires_at: iso(t.expires_s * 1000) });
-    // step 2: resource (already resolved by caller)
-    // step 3: registration state (only for a registration in this event)
-    const reg = ev.registrations.get(t.principal);
-    if (reg && t.event === ev.id && reg.status === "pending") throw new Problem("FORBIDDEN", "registration pending", { code_detail: "PENDING_APPROVAL" });
-    // step 4a: presented grant authenticity (R-AUTHZ-15)
+    return { t, bearer };
+  }
+
+  // steps 4a–6
+  function grantChecks(ev, t, bearer, headers, kind, mandate) {
     let g;
     const presented = headers["ilp-grant"];
     if (presented) {
@@ -317,7 +326,7 @@ export function createNode({ baseUrl, name, key, build, deploymentId, adminToken
       }
       if (decoded.payload.iss !== baseUrl || decoded.payload.aud !== baseUrl) throw new Problem("GRANT_AUDIENCE_MISMATCH");
       try {
-        verifyJws(presented, (kid) => (kid === key.kid ? publicKey : null), { typ: TYP.grant });
+        verifyJws(presented, ownKey, { typ: TYP.grant });
       } catch (e) {
         if (e instanceof JwsError) throw new Problem(e.code === "UNKNOWN_SIGNER" ? "UNKNOWN_SIGNER" : "SIGNATURE_INVALID");
         throw e;
@@ -328,7 +337,6 @@ export function createNode({ baseUrl, name, key, build, deploymentId, adminToken
       g = t.grant ? grants.get(t.grant) : null;
       if (!g) throw new Problem("AUTHZ_REQUIRED", "no current grant covers this principal for this event");
     }
-    // step 4: status, validity, binding
     if (g.status === "revoked" || g.status === "superseded") throw new Problem("GRANT_REVOKED");
     if (g.status === "suspended") throw new Problem("PEER_SUSPENDED");
     const now = nowS();
@@ -337,33 +345,70 @@ export function createNode({ baseUrl, name, key, build, deploymentId, adminToken
       throw new Problem("GRANT_EXPIRED");
     }
     if (g.payload.credential_binding.value !== sha256B64u(Buffer.from(bearer, "utf8"))) throw new Problem("GRANT_BINDING_MISMATCH");
-    // remote sessions pause when the home's revocation state is stale (R-FED-21 declared policy)
     if (t.remote) {
       const p = peers.get(t.home);
       if (!p || p.state !== "active") throw new Problem("PEER_SUSPENDED");
-      if (!peerFresh(p)) throw new Problem("REVOCATION_STATE_UNKNOWN", "home revocation state stale", { retry_after: revocationBoundS });
+      if (!peerFresh(p)) throw new Problem("REVOCATION_STATE_UNKNOWN", "remote session paused: home revocation state stale", { retry_after: revocationBoundS });
     }
-    // step 5: event and audience
     if (g.payload.event !== ev.gid) throw new Problem("GRANT_EVENT_MISMATCH");
     if (g.payload.aud !== baseUrl) throw new Problem("GRANT_AUDIENCE_MISMATCH");
-    // step 6: scope and exclusions, mandates
-    const mandate = body.mandate ?? "human_directed";
-    const inScope = g.payload.authorization_details.some((d) => d.type === "ilp.pack_action" && d.pack === PACK && d.actions.includes(body.kind));
-    if (!inScope || (g.payload.exclusions ?? []).includes(body.kind)) throw new Problem("GRANT_SCOPE_VIOLATION", `${body.kind} is outside the grant`);
+    const inScope = g.payload.authorization_details.some((d) => d.type === "ilp.pack_action" && d.pack === PACK && d.actions.includes(kind));
+    if (!inScope || (g.payload.exclusions ?? []).includes(kind)) throw new Problem("GRANT_SCOPE_VIOLATION", `${kind} is outside the grant`);
     if (g.payload.mandates_allowed && !g.payload.mandates_allowed.includes(mandate)) throw new Problem("GRANT_SCOPE_VIOLATION", `mandate ${mandate} not allowed`, { code_detail: "MANDATE_NOT_ALLOWED" });
-    // step 7: event status and phase
+    return g;
+  }
+
+  function evaluate(ref, headers, body) {
+    // step 0: the whole envelope
+    if (typeof body.kind !== "string" || !/^[a-z][a-z0-9_-]*\.[a-z][a-z0-9_]*$/.test(body.kind)) throw new Problem("VALIDATION_FAILED", "kind is required");
+    if (body.payload !== undefined && (typeof body.payload !== "object" || body.payload === null || Array.isArray(body.payload))) throw new Problem("VALIDATION_FAILED", "payload must be an object");
+    if (body.mandate !== undefined && !MANDATES.includes(body.mandate)) throw new Problem("VALIDATION_FAILED", "mandate is not in the registry");
+    if (body.expect_phase !== undefined && typeof body.expect_phase !== "string") throw new Problem("VALIDATION_FAILED", "expect_phase must be a string");
+    if (body.target_action !== undefined && typeof body.target_action !== "string") throw new Problem("VALIDATION_FAILED", "target_action must be a string");
+    const extra = Object.keys(body).filter((k) => !["kind", "payload", "mandate", "expect_phase", "target_action"].includes(k));
+    if (extra.length) throw new Problem("VALIDATION_FAILED", `unknown member ${extra[0]}`);
+    const mandate = body.mandate ?? "human_directed";
+    // steps 1/1a
+    const { t, bearer } = authenticate(headers);
+    // step 2: resource and visibility
+    const ev = eventByRef(ref);
+    if (t.event !== ev.id) {
+      if (ev.visibility === "private") throw new Problem("NOT_FOUND", `event ${ref}`);
+      if (t.remote) {
+        grantChecks(ev, t, bearer, headers, body.kind, mandate); // 4a–5 in order
+        throw new Problem("GRANT_EVENT_MISMATCH");
+      }
+      throw new Problem("AUTH_INVALID", "this token belongs to another event");
+    }
+    // step 3
+    const reg = ev.registrations.get(t.principal);
+    if (reg && reg.status === "pending") throw new Problem("FORBIDDEN", "registration pending", { code_detail: "PENDING_APPROVAL" });
+    // steps 4a–6
+    const g = grantChecks(ev, t, bearer, headers, body.kind, mandate);
+    // step 7: status, phase, expect_phase
     const at = ACTIONS[body.kind];
     if (!at) throw new Problem("VALIDATION_FAILED", `unknown action kind ${body.kind}`);
     if (ev.status !== "live") throw new Problem("PHASE_MISMATCH", "event not live", { code_detail: "EVENT_NOT_LIVE" });
     if (!at.phases.includes(ev.phase)) throw new Problem("PHASE_MISMATCH", `not allowed in ${ev.phase}`, { code_detail: "ACTION_PHASE_FORBIDDEN", current_phase: ev.phase, allowed_phases: at.phases });
+    if (body.expect_phase !== undefined && body.expect_phase !== ev.phase) throw new Problem("PHASE_MISMATCH", "expect_phase does not match", { code_detail: "EXPECT_PHASE_STALE", current_phase: ev.phase });
     // step 8: role
     if (!at.roles.includes(g.payload.role)) throw new Problem("FORBIDDEN", "role");
-    // step 9: payload
+    // step 9: payload and pack rules
     if (!at.validate(body.payload ?? {})) throw new Problem("VALIDATION_FAILED", "payload invalid for pack action");
+    let target = null;
+    if (at.target) {
+      if (!body.target_action) throw new Problem("VALIDATION_FAILED", `${body.kind} requires target_action`);
+      target = ev.actions.find((a) => a.id === body.target_action || a.id.endsWith(`:${body.target_action}`));
+      if (!target) throw new Problem("NOT_FOUND", "target action not found");
+      if (target.kind !== at.target) throw new Problem("VALIDATION_FAILED", `${body.kind} may only target ${at.target}`);
+      if (target.subject_human === t.principal) throw new Problem("CONFLICT", "self-action forbidden", { code_detail: "SELF_VOTE_FORBIDDEN" });
+      if (ev.actions.some((a) => a.kind === body.kind && a.subject_human === t.principal && a.target === target.id)) throw new Problem("CONFLICT", "already acted on this target", { code_detail: "ALREADY_EXISTS_FOR_TARGET" });
+    }
     // step 10: caps
     const count = ev.actions.filter((a) => a.kind === body.kind && a.subject_human === t.principal).length;
     if (count >= at.cap) throw new Problem("CONFLICT", "cap reached", { code_detail: "MAX_OPEN_REACHED", cap: at.cap });
-    return { t, g, mandate };
+    // step 11: consent — reference events declare no publication-consent requirement
+    return { ev, t, g, mandate, target };
   }
 
   // ---- routes ----
@@ -412,9 +457,9 @@ export function createNode({ baseUrl, name, key, build, deploymentId, adminToken
       const human = gid("human");
       humans.set(human, { gid: human, display_name: body.display_name ?? "Local participant", synthetic: true, revoked: false });
       ev.registrations.set(human, { status: "active", remote: false });
-      const t = mintToken(ev, { principal: human, agent: null, plate: null, remote: false, home: host });
-      const g = issueGrant(ev, t);
-      return { status: 201, body: { human, participant_token: t.token, grant: g.jws } };
+      const { t, token } = mintToken(ev, { principal: human, agent: null, plate: null, remote: false, home: host });
+      const g = issueGrant(ev, t, token);
+      return { status: 201, body: { human, participant_token: token, grant: g.jws } };
     }],
 
     ["POST", "/ilp/v1/admin/attestations", ({ headers, body }) => {
@@ -568,6 +613,10 @@ export function createNode({ baseUrl, name, key, build, deploymentId, adminToken
       if (c.exp - c.iat > 86400 || c.iat > now + SKEW_S) throw new Problem("VALIDATION_FAILED", "claim lifetime or iat out of bounds");
       // 5. replay
       if (seenClaims.has(c.jti)) throw new Problem("CLAIM_REPLAYED");
+      // reserve the jti before any await, so concurrent submissions of one claim cannot both pass (released on failure)
+      seenClaims.add(c.jti);
+      let accepted = false;
+      try {
       // 6. revocation state fresh and clean
       try {
         await refreshPeer(p);
@@ -578,12 +627,12 @@ export function createNode({ baseUrl, name, key, build, deploymentId, adminToken
       if (p.revoked.has(`claim:${c.jti}`) || p.revoked.has(`human:${c.sub}`) || (c.agent && (p.revoked.has(`agent:${c.agent.id}`) || p.revoked.has(`plate:${c.agent.license_plate}`)))) throw new Problem("SUBJECT_REVOKED");
       if (c.event !== ev.gid) throw new Problem("VALIDATION_FAILED", "claim is for another event");
       if (ev.visibility !== "federated" || ev.remote_participants !== "allowed") throw new Problem("FORBIDDEN", "event does not admit remote participants");
-      seenClaims.add(c.jti);
+      accepted = true;
       // shadow principal (keyed by home global ID; no email) + pending registration
       const jr = {
         gid: gid("join_request"), event: ev.id, status: "pending", subject: c.sub, agent: c.agent?.id ?? null, plate: c.agent?.license_plate ?? null,
         display_name: c.display_name, home: p.host, claim_jti: c.jti, consent: c.consent_accepted ?? body.consent_accepted ?? null,
-        retrieval_hash: null, token: null, grant: null,
+        retrieval_hash: null, grant: null, token_delivered: false,
       };
       const retrieval = random("ilpr_");
       jr.retrieval_hash = tokenHash(retrieval);
@@ -591,6 +640,9 @@ export function createNode({ baseUrl, name, key, build, deploymentId, adminToken
       ev.registrations.set(c.sub, { status: "pending", remote: true, join_request: jr.gid });
       appendFeed(ev, "join_request.received", jr.gid, "remote join request pending", { home: p.host });
       return { status: 202, body: { join_request_id: jr.gid, status: "pending", retrieval_key: retrieval } };
+      } finally {
+        if (!accepted) seenClaims.delete(c.jti);
+      }
     }],
     ["GET", "/ilp/v1/events/:ref/join-requests", ({ headers, params }) => {
       const ev = eventByRef(params.ref);
@@ -604,7 +656,15 @@ export function createNode({ baseUrl, name, key, build, deploymentId, adminToken
       const bearer = (headers.authorization ?? "").replace(/^Bearer\s+/i, "");
       if (!bearer) throw new Problem("AUTH_MISSING");
       if (tokenHash(bearer) !== jr.retrieval_hash) throw new Problem("AUTH_INVALID");
-      return { body: { join_request_id: jr.gid, event: ev.gid, status: jr.status, subject: jr.subject, ...(jr.status === "approved" ? { participant_token: jr.token, grant: grants.get(jr.grant).jws } : {}) } };
+      const base = { join_request_id: jr.gid, event: ev.gid, status: jr.status, subject: jr.subject };
+      if (jr.status !== "approved") return { body: base };
+      if (jr.token_delivered) return { body: { ...base, grant: grants.get(jr.grant).jws, token_delivered: true } };
+      // SCR-7: token and grant are minted together at the first authenticated retrieval; only the hash is kept
+      const { t, token } = mintToken(ev, { principal: jr.subject, agent: jr.agent, plate: jr.plate, remote: true, home: jr.home, claim_jti: jr.claim_jti });
+      const g = issueGrant(ev, t, token);
+      jr.grant = g.jti;
+      jr.token_delivered = true;
+      return { body: { ...base, participant_token: token, grant: g.jws } };
     }],
     ["POST", "/ilp/v1/events/:ref/join-requests/:id/:verdict", ({ headers, params }) => {
       const ev = eventByRef(params.ref);
@@ -623,28 +683,25 @@ export function createNode({ baseUrl, name, key, build, deploymentId, adminToken
       if (!p || p.state !== "active") throw new Problem("PEER_SUSPENDED");
       jr.status = "approved";
       ev.registrations.get(jr.subject).status = "active";
-      const t = mintToken(ev, { principal: jr.subject, agent: jr.agent, plate: jr.plate, remote: true, home: jr.home, claim_jti: jr.claim_jti });
-      jr.token = t.token;
       appendFeed(ev, "join_request.approved", jr.gid, "remote join approved");
       appendReceipt(ev, { action_kind: "federation.join_approved", subject_human: jr.subject, subject_agent: jr.agent, license_plate: jr.plate, resource: jr.gid });
-      const g = issueGrant(ev, t);
-      jr.grant = g.jti;
-      return { body: { join_request_id: jr.gid, status: "approved", grant_id: g.jti } };
+      return { body: { join_request_id: jr.gid, status: "approved" } };
     }],
 
     // governed actions
     ["POST", "/ilp/v1/events/:ref/actions", ({ headers, params, body }) => {
-      const ev = eventByRef(params.ref);
       const idem = headers["idempotency-key"];
-      const { t, g, mandate } = evaluate(ev, headers, body);
+      const { ev, t, g, mandate, target } = evaluate(params.ref, headers, body);
       if (idem) {
         const prior = ev.idempotency.get(`${t.principal}|${idem}`);
         if (prior) return { status: 200, body: { ...prior, duplicate: true } };
       }
-      const action = { id: gid("action"), kind: body.kind, payload: body.payload ?? {}, subject_human: t.principal, subject_agent: t.agent, license_plate: t.plate, mandate, authorization_grant: g.jti, occurred_at: iso() };
+      // build every record first (anything that can fail fails here); then mutate all together (R-AUTHZ-11)
+      const action = { id: gid("action"), kind: body.kind, payload: body.payload ?? {}, subject_human: t.principal, subject_agent: t.agent, license_plate: t.plate, mandate, authorization_grant: g.jti, target: target?.id ?? null, occurred_at: iso() };
+      const receipt = buildReceipt(ev, { action_kind: body.kind, subject_human: t.principal, subject_agent: t.agent, license_plate: t.plate, mandate, source_class: "agent_token_api", authorization_grant: g.jti, resource: action.id });
       const feed = appendFeed(ev, "action.accepted", action.id, body.kind, { kind: body.kind });
       ev.actions.push(action);
-      appendReceipt(ev, { action_kind: body.kind, subject_human: t.principal, subject_agent: t.agent, license_plate: t.plate, mandate, source_class: "agent_token_api", authorization_grant: g.jti, resource: action.id });
+      ev.receipts.push(receipt);
       const result = { id: action.id, seq: feed.seq, kind: body.kind, state: "accepted", duplicate: false };
       if (idem) ev.idempotency.set(`${t.principal}|${idem}`, result);
       return { status: 201, body: result };

@@ -51,11 +51,11 @@ const tests = [
   T("PC-ENF-3", "SG-3", "host", "blocker", "A token and grant issued for event E1 used against event E2 on the same host is rejected with GRANT_EVENT_MISMATCH, with no side effects", ["R-AUTHZ-7", "R-AUTHZ-17", "R-CORE-29", "R-AUTHZ-11"], "GRANT_EVENT_MISMATCH"),
   T("PC-ENF-4", "SG-3", "host", "blocker", "A presented grant issued by another host is rejected with GRANT_AUDIENCE_MISMATCH, with no side effects", ["R-AUTHZ-4", "R-AUTHZ-15"], "GRANT_AUDIENCE_MISMATCH"),
   T("PC-ENF-5", "SG-3", "host", "blocker", "A presented grant with an altered payload byte is rejected with SIGNATURE_INVALID, with no side effects", ["R-CORE-36", "R-AUTHZ-15"], "SIGNATURE_INVALID"),
-  T("PC-ENF-6", "SG-3", "host", "blocker", "A presented grant bound to another participant's token is rejected with GRANT_BINDING_MISMATCH, with no side effects", ["R-AUTHZ-6", "R-AUTHZ-15"], "GRANT_BINDING_MISMATCH"),
+  T("PC-ENF-6", "SG-2", "host", "blocker", "A presented grant bound to another participant's token is rejected with GRANT_BINDING_MISMATCH, with no side effects", ["R-AUTHZ-6", "R-AUTHZ-15"], "GRANT_BINDING_MISMATCH"),
   T("PC-ENF-7", "SG-3", "host", "blocker", "An expired grant authorizes nothing: the act is rejected with GRANT_EXPIRED and no side effects", ["R-AUTHZ-5", "R-AUTHZ-11"], "GRANT_EXPIRED"),
   T("PC-ENF-8", "SG-3", "host", "blocker", "A grant revoked by the host operator is rejected on next use with GRANT_REVOKED (or AUTH_REVOKED when the token is revoked with it), its status is revoked, and a signed revocation record of kind grant is published", ["R-AUTHZ-12", "R-FED-10", "R-AUTHZ-9"], "revoked on next use; record"),
   T("PC-ENF-9", "SG-3", "host", "major", "On the E-mandate event, the delivered grant carries mandates_allowed = [human_directed, human_approved] (asserted first); an act declaring standing_instruction is rejected with GRANT_SCOPE_VIOLATION + code_detail MANDATE_NOT_ALLOWED and no side effects", ["R-AUTHZ-13"], "MANDATE_NOT_ALLOWED"),
-  T("PC-ENF-10", "SG-3", "host", "blocker", "A grant is not a bearer credential: Authorization: Bearer <grant JWS> is rejected with AUTH_INVALID, and ILP-Grant with no Authorization is rejected with AUTH_MISSING, both with no side effects", ["R-AUTHZ-6", "R-AUTHZ-11"], "AUTH_INVALID; AUTH_MISSING"),
+  T("PC-ENF-10", "SG-2", "host", "blocker", "A grant is not a bearer credential: Authorization: Bearer <grant JWS> is rejected with AUTH_INVALID, and ILP-Grant with no Authorization is rejected with AUTH_MISSING, both with no side effects", ["R-AUTHZ-6", "R-AUTHZ-11"], "AUTH_INVALID; AUTH_MISSING"),
   T("PC-ENF-11", "SG-3", "host", "blocker", "Narrowing only: (a) on the E-excl event, whose grant lists unconference.vote in both authorization_details and exclusions, a vote is rejected with GRANT_SCOPE_VIOLATION; (b) a grant-permitted proposal beyond the engine's per-participant cap is rejected (VOTE_CAP_EXCEEDED or CONFLICT); both with no side effects", ["R-AUTHZ-8", "R-AUTHZ-11"], "rejected; no side effects"),
   // Revocation and isolation (G6)
   T("PC-REV-1", "SG-3", "both", "blocker", "The revocation feed serves signed ilp-revocation+jwt records, valid against revocation-record, with strictly increasing seq and the {items, next_cursor, latest_seq} envelope", ["R-FED-10", "R-CORE-36"], "records verify"),
@@ -145,7 +145,7 @@ const profile = {
     observables: "GET /ilp/v1/events/{event}/feed?since=; GET /ilp/v1/events/{event}/receipts",
     export: "POST /ilp/v1/events/{event}/exports; GET …/exports/{id} [operator credential]",
   },
-  no_side_effect_observables: ["action count (feed records of kind action)", "feed latest_seq", "receipt head hash", "tallies", "artifact revision"],
+  no_side_effect_observables: ["action count (feed records of kind action)", "feed latest_seq and tail record", "receipt count and head hash", "tallies and artifact revisions — in slice 1 every tally or artifact change is itself a feed record (R-CORE-13), so the feed tail observes them", "every observation must succeed; an unobservable state fails the test"],
   negative_fixtures: [
     { id: "NF-1", test: "PC-IDC-2", build: "an action with Authorization: Bearer <valid claim JWS>", expect: "AUTHZ_REQUIRED", step: "1a" },
     { id: "NF-2", test: "PC-IDC-3", build: "submit the same claim twice", expect: "CLAIM_REPLAYED" },

@@ -142,10 +142,10 @@
   },
   "no_side_effect_observables": [
     "action count (feed records of kind action)",
-    "feed latest_seq",
-    "receipt head hash",
-    "tallies",
-    "artifact revision"
+    "feed latest_seq and tail record",
+    "receipt count and head hash",
+    "tallies and artifact revisions — in slice 1 every tally or artifact change is itself a feed record (R-CORE-13), so the feed tail observes them",
+    "every observation must succeed; an unobservable state fails the test"
   ],
   "negative_fixtures": [
     {
@@ -762,7 +762,7 @@
     },
     {
       "id": "PC-ENF-6",
-      "gate": "SG-3",
+      "gate": "SG-2",
       "role": "host",
       "severity": "blocker",
       "title": "A presented grant bound to another participant's token is rejected with GRANT_BINDING_MISMATCH, with no side effects",
@@ -818,7 +818,7 @@
     },
     {
       "id": "PC-ENF-10",
-      "gate": "SG-3",
+      "gate": "SG-2",
       "role": "host",
       "severity": "blocker",
       "title": "A grant is not a bearer credential: Authorization: Bearer <grant JWS> is rejected with AUTH_INVALID, and ILP-Grant with no Authorization is rejected with AUTH_MISSING, both with no side effects",

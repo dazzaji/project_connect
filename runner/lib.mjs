@@ -49,10 +49,15 @@ export function expectOk(res, status, what) {
 export async function observe(node, eventRef) {
   const feed = await http("GET", `${node.base}/ilp/v1/events/${eventRef}/feed?since=0`);
   const rc = await http("GET", `${node.base}/ilp/v1/events/${eventRef}/receipts`);
-  const items = feed.json?.items ?? [];
+  // an observation that cannot be made fails the test; it never compares as "unchanged"
+  check(feed.status === 200 && Array.isArray(feed.json?.items) && Number.isInteger(feed.json?.latest_seq), `observe ${node.name} feed: HTTP ${feed.status}`);
+  check(rc.status === 200 && Array.isArray(rc.json?.items), `observe ${node.name} receipts: HTTP ${rc.status}`);
+  const items = feed.json.items;
   return {
     latest_seq: feed.json?.latest_seq ?? null,
     actions: items.filter((f) => f.kind === "action.accepted").length,
+    // every tally or artifact change in slice 1 is itself a feed record (R-CORE-13), so the feed tail covers them
+    tail: items.at(-1) ? `${items.at(-1).seq}:${items.at(-1).kind}:${items.at(-1).resource_global_id}` : null,
     receipts: rc.json?.items?.length ?? null,
     head: rc.json?.items?.at(-1)?.hash ?? null,
   };

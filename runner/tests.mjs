@@ -146,6 +146,17 @@ export const TESTS = {
     check(text.includes("Synthetic"), "cannot construct tampered claim");
     const tampered = `${h}.${b64u.encode(Buffer.from(text.replace("Synthetic", "Synthetik"), "utf8"))}.${s}`;
     expectProblem(await http("POST", `${host.base}/ilp/v1/events/${E1.id}/join-requests`, { body: { claim: tampered } }), "SIGNATURE_INVALID", "tampered claim");
+    // paired failure: tampered AND for another audience → the signature (step 2) is reported before the audience (step 3)
+    const [oh, op, os] = other.claim.split(".");
+    const otext = b64u.decode(op).toString("utf8");
+    const tamperedOther = `${oh}.${b64u.encode(Buffer.from(otext.replace("Synthetic", "Synthetik"), "utf8"))}.${os}`;
+    expectProblem(await http("POST", `${host.base}/ilp/v1/events/${E1.id}/join-requests`, { body: { claim: tamperedOther } }), "SIGNATURE_INVALID", "tampered claim for another audience (precedence)");
+    // concurrent replay: one fresh claim submitted twice at once → exactly one acceptance
+    const race = expectOk(await http("POST", `${home.base}/ilp/v1/claims`, { bearer: ctx.creds.provisioning, body: { purpose: "event_join", event: ctx.events.E1.global_id, aud: host.base, agent: null, on_behalf_of: (expectOk(await http("POST", `${home.base}/ilp/v1/admin/synthetic/humans`, { bearer: ctx.creds.provisioning, body: { display_name: `Race ${ctx.tag}` } }), 201, "race subject")).human } }), 201, "race claim").claim;
+    const both = await Promise.all([0, 1].map(() => http("POST", `${host.base}/ilp/v1/events/${E1.id}/join-requests`, { body: { claim: race } })));
+    const accepted = both.filter((r) => r.status === 202).length;
+    check(accepted === 1, `concurrent replay: ${accepted} acceptances (want exactly 1)`);
+    expectProblem(both.find((r) => r.status !== 202), "CLAIM_REPLAYED", "concurrent replay");
     ctx.spareClaim = fresh.claim; // untouched original, unused so far
     return { replay: "CLAIM_REPLAYED", audience: "CLAIM_AUDIENCE_MISMATCH", expired: "CLAIM_EXPIRED", tampered: "SIGNATURE_INVALID" };
   },
@@ -222,6 +233,6 @@ export const TESTS = {
   },
 };
 
-export const SG2_ORDER = ["PC-DISC-1", "PC-DISC-2", "PC-DISC-3", "PC-DISC-4", "PC-PEER-1", "PC-IDC-1", "PC-IDC-2", "PC-IDC-3", "PC-GRANT-1", "PC-GRANT-2", "PC-ENF-1", "PC-RCPT-1", "PC-ENF-2"];
+export const SG2_ORDER = ["PC-DISC-1", "PC-DISC-2", "PC-DISC-3", "PC-DISC-4", "PC-PEER-1", "PC-IDC-1", "PC-IDC-2", "PC-IDC-3", "PC-GRANT-1", "PC-GRANT-2", "PC-ENF-1", "PC-RCPT-1", "PC-ENF-2", "PC-ENF-6", "PC-ENF-10"];
 
 export { generateKey, decodeJws };

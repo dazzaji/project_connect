@@ -2,6 +2,7 @@
 // usage: node reference-node/main.mjs --base-url http://pc-ref.localhost:4190 --port 4190 --key-file <path> --admin-token-file <path> [--dev] [--bound 60]
 // Keys fail closed (R-CORE-34(b)): a missing or invalid key file stops startup unless --dev, which may create one but never overwrite.
 import { execFileSync } from "node:child_process";
+import { createPrivateKey, createPublicKey } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,10 +22,19 @@ if (!existsSync(keyFile)) {
   const k = generateKey(`ref-${new Date().toISOString().slice(0, 10)}-a`);
   writeFileSync(keyFile, JSON.stringify({ active_kid: k.kid, keys: [k.privateJwk] }, null, 2), { mode: 0o600, flag: "wx" });
 }
+let keyring;
 try {
   const kf = JSON.parse(readFileSync(keyFile, "utf8"));
+  if (!Array.isArray(kf.keys) || !kf.keys.length) throw new Error("empty keyring");
+  // every key must be a real Ed25519 private key whose public half matches its published x
+  for (const k of kf.keys) {
+    if (typeof k.kid !== "string" || !k.kid) throw new Error("a key has no kid");
+    const derived = createPublicKey(createPrivateKey({ key: { kty: "OKP", crv: "Ed25519", d: k.d, x: k.x }, format: "jwk" })).export({ format: "jwk" });
+    if (derived.crv !== "Ed25519" || derived.x !== k.x || Buffer.from(k.d, "base64url").length !== 32) throw new Error(`key ${k.kid} is not a consistent Ed25519 key pair`);
+  }
   key = kf.keys.find((k) => k.kid === kf.active_kid);
-  if (!key?.d || !key?.x || key.crv !== "Ed25519") throw new Error("no valid active Ed25519 key");
+  if (!key) throw new Error("active_kid is not in the keyring");
+  keyring = kf.keys;
 } catch (e) {
   die(`key file ${keyFile} is invalid (${e.message}); refusing to start`);
 }
@@ -39,7 +49,7 @@ try {
 } catch {}
 const deploymentId = `${new URL(baseUrl).hostname}-${new Date().toISOString()}`;
 
-const node = createNode({ baseUrl, name: "Project Connect reference node", key, build, deploymentId, adminToken, revocationBoundS: Number(args.bound ?? 60), log: (m) => console.error(`[${new Date().toISOString()}] ${m}`) });
+const node = createNode({ baseUrl, name: "Project Connect reference node", key, keyring, build, deploymentId, adminToken, revocationBoundS: Number(args.bound ?? 60), log: (m) => console.error(`[${new Date().toISOString()}] ${m}`) });
 node.startPolling();
 await serve({ port, host: args.host ?? "::", routes: node.routes, log: console.error });
 console.error(`reference node ${baseUrl} (build ${build}, kid ${key.kid}) listening on ${port}`);

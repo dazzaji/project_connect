@@ -217,6 +217,10 @@ export const SG3_TESTS = {
     const E2 = ctx.events.E2;
     const before = await observe(ctx.host, E2.id);
     expectProblem(await act(ctx.host, E2, ctx.token, proposal("x-event")), "GRANT_EVENT_MISMATCH", "E1 credentials on E2");
+    // paired failure: a tampered presented grant against another event is reported at 4a, before step 5
+    const [h, p, s] = ctx.grant.split(".");
+    const tampered = `${h}.${b64u.encode(Buffer.from(b64u.decode(p).toString("utf8").replace('"participant"', '"participanu"'), "utf8"))}.${s}`;
+    expectProblem(await act(ctx.host, E2, ctx.token, proposal("x-event tampered"), { "ilp-grant": tampered }), "SIGNATURE_INVALID", "tampered grant on another event (precedence)");
     await expectNoSideEffects(ctx.host, E2.id, before, "cross-event");
     return { reported: "GRANT_EVENT_MISMATCH" };
   },
@@ -242,7 +246,7 @@ export const SG3_TESTS = {
   },
   async "PC-ENF-6"(ctx) {
     const E1 = ctx.events.E1;
-    const second = await admit(ctx, ctx.events.E1, { label: "second" });
+    const second = await admit(ctx, { ...ctx.events.E1, key: "E1" }, { label: "second" });
     ctx.second = second;
     const before = await observe(ctx.host, E1.id);
     expectProblem(await act(ctx.host, E1, ctx.token, proposal("cross-bound"), { "ilp-grant": second.grant }), "GRANT_BINDING_MISMATCH", "another participant's grant");
@@ -490,7 +494,7 @@ export const SG3_ORDER = [
   "PC-CORE-2", "PC-CORE-3", "PC-CORE-4", "PC-CORE-5", "PC-PEER-2",
   "PC-DIR-1", "PC-DIR-2", "PC-DIR-3", "PC-DIR-4",
   "PC-RCPT-2", "PC-RCPT-3",
-  "PC-ENF-3", "PC-ENF-4", "PC-ENF-5", "PC-ENF-6", "PC-ENF-8", "PC-ENF-9", "PC-ENF-10", "PC-ENF-11",
+  "PC-ENF-3", "PC-ENF-4", "PC-ENF-5", "PC-ENF-8", "PC-ENF-9", "PC-ENF-11",
   "PC-PROV-1", "PC-REV-1", "PC-REV-2", "PC-REV-3", "PC-PEER-3", "PC-REV-4", "PC-REV-5",
   "PC-DISC-5", "PC-INTEROP-AB", "PC-INTEROP-BA", "PC-CORE-1",
 ];
