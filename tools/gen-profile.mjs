@@ -110,7 +110,7 @@ const profile = {
   nodes: {
     "beta-one": { base_url: "http://beta-one.localhost:4101", implementation: "interlateral-platform-beta" },
     "beta-two": { base_url: "http://beta-two.localhost:4102", implementation: "interlateral-platform-beta" },
-    "pc-ref": { base_url: "http://pc-ref.localhost:4190", implementation: "project-connect-reference-node" },
+    "pc-ref": { base_url: "http://pc-ref.localhost:4193", implementation: "project-connect-reference-node", $comment: "not 4190: that port is on the Fetch standard blocked-ports list (sieve)" },
   },
   actors: {
     $comment: "Actor and credential table (CDX-06). Credentials are provisioned at startup by each node's admin, outside the black-box run, and never appear in evidence.",
