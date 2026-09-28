@@ -280,7 +280,7 @@ const schemas = {
       event: gid("event"),
       status: { enum: ["pending", "approved", "rejected"] },
       subject: gid("human"),
-      participant_token: { type: "string", pattern: "^ilpt_[A-Za-z0-9_-]{16,}$", $comment: "present only when approved; a host MAY deliver it only once (then token_delivered is true)" },
+      participant_token: { type: "string", pattern: "^ilpt_[A-Za-z0-9_-]{22,}$", $comment: "present only when approved; a host MAY deliver it only once (then token_delivered is true)" },
       grant: { ...jwsCompact, $comment: "the ilp-grant+jwt; present only when approved" },
       token_delivered: { type: "boolean", $comment: "true when the token was already delivered by an earlier retrieval (SCR-7)" },
       reason: { type: "string", maxLength: 500 },

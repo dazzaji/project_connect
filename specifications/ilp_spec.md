@@ -2072,21 +2072,21 @@ Measured on 2026-09-27 against the reference implementation (`misc/evidence/…/
 
 These are the families of profile `pc-0.1-s1`; the candidate profile file (`profile/pc-0.1-s1.json`, 47 tests) is authoritative, and the final text freezes at 0.1.0.
 
-| Family | IDs | Asserts |
+| Family | IDs | Expected outcomes (from the profile) |
 |---|---|---|
-| PC-DISC | 1–5 | Discovery validates strictly; `spec_versions` and profile present; build identity is real; keys are well-formed; every endpoint resolves |
-| PC-CORE | 1–5 | Vectors verify; problem shape and registered codes; unknown members ignored; `PROTOCOL_UNSUPPORTED`; ±300 s skew |
-| PC-PEER | 1–3 | Mutual approval → `active`, listed; non-peer → `NOT_A_PEER`; suspend and remove audited and receipted |
-| PC-DIR | 1–4 | Required fields; aggregation labeled by home; private events never cross; outage degrades gracefully; status propagates |
-| PC-IDC | 1–3 | Claim validity; join → `202` with a shadow principal and no email; identity alone → `AUTHZ_REQUIRED` |
-| PC-GRANT | 1–3 | A signed grant on approval, verifiable and bound to the credential; retrieval-key discipline; public status endpoint with no secrets |
-| PC-RCPT | 1–3 | A permitted act is accepted once; the receipt carries `authorization_grant` and the chain holds; idempotency; feed and export agree |
-| PC-ENF | 1–11 | Each negative case yields the expected code **and** no side effects: no grant, out of scope, wrong event or audience, expired, replayed, tampered, revoked, unknown signer, unsupported version |
-| PC-REV | 1–5 | Host-side grant revocation; home-side agent revocation within bound B; peer suspend and reinstate; stale feed → fail closed; local events isolated from the outage |
-| PC-PROV | 1 | The synthetic-principal provisioning credential cannot act beyond its scope (R-CONF-6) |
-| PC-INTEROP | AB, BA | G3–G6 with roles swapped |
-| PC-EXP | 1–2 | Export with grants and revocations verifies offline; any tampered byte fails |
-| PC-VER | 1–2 | Packet complete, signed, deterministic, and secret-free; attestations over the packet root |
+| PC-DISC | 1–5 | 200; schema discovery v2 valid; two fetches equal; non-empty build and deployment_id; spec_versions ∋ 0.0.2; active kid used by claims, grants, revocations; refusal; key unchanged |
+| PC-CORE | 1–5 | every negative response in the run conforms; 202 pending for both; SIGNATURE_INVALID; UNKNOWN_SIGNER; GRANT_SCOPE_VIOLATION; chain verifies with the reference library |
+| PC-PEER | 1–3 | active both ways; NOT_A_PEER; state + records; removed absent |
+| PC-DIR | 1–4 | entry present and valid; absent; aggregated entry equal on identifying members; monotonic; closed reported |
+| PC-IDC | 1–3 | valid claim; NOT_A_PEER for a non-peer aud; 202; AUTHZ_REQUIRED; no side effects; each code |
+| PC-GRANT | 1–3 | valid grant bound to the delivered token; active; same JWS; GRANT_EXPIRED |
+| PC-RCPT | 1–3 | receipt as specified; one action; receipts present |
+| PC-ENF | 1–11 | 201; one action; GRANT_SCOPE_VIOLATION; no side effects; GRANT_EVENT_MISMATCH; GRANT_AUDIENCE_MISMATCH; SIGNATURE_INVALID; GRANT_BINDING_MISMATCH; GRANT_EXPIRED; revoked on next use; record; MANDATE_NOT_ALLOWED; AUTH_INVALID; AUTH_MISSING; rejected; no side effects |
+| PC-REV | 1–5 | records verify; rejected within bound; PEER_SUSPENDED then original credentials resume; REVOCATION_STATE_UNKNOWN; declared policy; recovery; local act accepted |
+| PC-PROV | 1 | rejected; no state change |
+| PC-INTEROP | AB, BA | all pass in SC-1; all pass in SC-2 |
+| PC-EXP | 1 | bundle verifies |
+| PC-VER | 1 | exit 0; negatives non-zero |
 
 ## Appendix C — Endpoint inventory *(informative)*
 

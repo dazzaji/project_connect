@@ -6,7 +6,7 @@
   "artifacts": [
     {
       "path": "specifications/ilp_spec.md",
-      "sha256": "ac0bde1fc4df492a08ed6f2edd97746af70142e4a8cd879e3e8942b05eba3e06"
+      "sha256": "1a81c0bd72b8a9e8ae43cb85c85a4d57a60e705c9151269ab7ef9786365f6b2b"
     },
     {
       "path": "specifications/schemas/attestation.schema.json",
@@ -42,7 +42,7 @@
     },
     {
       "path": "specifications/schemas/join-request.schema.json",
-      "sha256": "eca3fe0f1d74c7ed0c4284751e7dbe095e3cbff9285a74d3fab951fe6dbfd08e"
+      "sha256": "6a784a1d028c977ef1d2733a571a505086ae59eaf8684a997b9d19eb36ade79f"
     },
     {
       "path": "specifications/schemas/peer-record.schema.json",

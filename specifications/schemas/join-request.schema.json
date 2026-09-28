@@ -35,7 +35,7 @@
     },
     "participant_token": {
       "type": "string",
-      "pattern": "^ilpt_[A-Za-z0-9_-]{16,}$",
+      "pattern": "^ilpt_[A-Za-z0-9_-]{22,}$",
       "$comment": "present only when approved; a host MAY deliver it only once (then token_delivered is true)"
     },
     "grant": {
