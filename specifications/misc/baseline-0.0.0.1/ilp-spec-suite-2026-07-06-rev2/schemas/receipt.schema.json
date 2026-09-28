@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ilp:schema:receipt:v1",
+  "title": "ILP Receipt (R-CORE-22)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "event",
+    "action_kind",
+    "subject_human",
+    "mandate",
+    "resource",
+    "occurred_at",
+    "prev_receipt_hash",
+    "hash"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "#/$defs/globalId"
+    },
+    "event": {
+      "$ref": "#/$defs/globalId"
+    },
+    "action_kind": {
+      "type": "string",
+      "$comment": "e.g. unconference.vote, engine.registration_approved, collab.edit, federation.join_approved"
+    },
+    "subject_human": {
+      "$ref": "#/$defs/globalId",
+      "$comment": "home-origin id for remote participants (R-CORE-25)"
+    },
+    "subject_agent": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/globalId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "license_plate": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^IL-[A-Z2-9]{8}$"
+    },
+    "mandate": {
+      "enum": [
+        "human_directed",
+        "human_approved",
+        "standing_instruction",
+        "agent_draft_unaccepted"
+      ]
+    },
+    "resource": {
+      "$ref": "#/$defs/globalId"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "prev_receipt_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "$comment": "sha256 hex of previous receipt in this event; 64 zeros for the first"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "$comment": "sha256 hex over RFC 8785 canonical JSON of all fields except hash"
+    },
+    "source_class": {
+      "enum": [
+        "agent_token_api",
+        "browser_ui",
+        "engine"
+      ],
+      "$comment": "D2 (dual-subject receipts): HOW the action arrived — explicit, never implied; engine = platform lifecycle writes"
+    }
+  },
+  "$defs": {
+    "globalId": {
+      "type": "string",
+      "pattern": "^ilp:[a-z0-9.-]+:[a-z_]+:[A-Za-z0-9-]+$"
+    }
+  }
+}

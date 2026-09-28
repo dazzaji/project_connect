@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ilp:schema:event-definition:v1",
+  "title": "ILP Event Definition v1 (YAML parsed to JSON)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "event"],
+  "properties": {
+    "version": { "const": "event-definition/v1" },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slug", "title", "description", "pack"],
+      "properties": {
+        "slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,78}[a-z0-9]$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "description": { "type": "string", "maxLength": 20000 },
+        "pack": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*@[0-9]+\\.[0-9]+$" },
+        "visibility": { "enum": ["private", "public", "federated"], "default": "public" },
+        "starts_at": { "type": "string", "format": "date-time" },
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "identity_required": { "type": "boolean", "default": true },
+            "publication_consent_required": { "type": "boolean", "default": true },
+            "registration_approval": { "enum": ["operator", "auto"], "default": "operator" },
+            "remote_participants": { "enum": ["allowed", "denied"], "default": "allowed" }
+          }
+        },
+        "branding": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tagline": { "type": "string", "maxLength": 300 },
+            "logo_url": { "type": "string", "format": "uri" },
+            "primary_color": { "type": "string", "pattern": "^#[0-9a-fA-F]{3,8}$" }
+          }
+        }
+      }
+    },
+    "params": {
+      "type": "object",
+      "description": "Pack-declared parameters; validated against the pack's params_schema at create time. Unknown keys are rejected by the pack schema, not accepted silently.",
+      "maxProperties": 64
+    },
+    "phases": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,39}$" },
+          "label": { "type": "string", "maxLength": 80 },
+          "deadline_minutes": { "type": "integer", "minimum": 1, "maximum": 10080 }
+        }
+      }
+    },
+    "surfaces": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "skill_markdown": { "type": "string", "maxLength": 65536 },
+        "prompt_markdown": { "type": "string", "maxLength": 65536 }
+      }
+    }
+  }
+}

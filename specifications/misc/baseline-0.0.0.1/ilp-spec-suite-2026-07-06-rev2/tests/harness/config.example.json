@@ -1,0 +1,22 @@
+{
+  "A": {
+    "base": "https://instance-a.example",
+    "adminBootstrapToken": "SET_AT_INSTALL",
+    "clockHook": null
+  },
+  "B": {
+    "base": "https://instance-b.example",
+    "adminBootstrapToken": "SET_AT_INSTALL",
+    "clockHook": null
+  },
+  "C": {
+    "base": "https://instance-c.example",
+    "adminBootstrapToken": "SET_AT_INSTALL",
+    "clockHook": null
+  },
+  "mail": {
+    "mode": "smtp-catcher",
+    "smtpCatcher": { "host": "127.0.0.1", "apiPort": 8025 }
+  },
+  "resetHook": null
+}
