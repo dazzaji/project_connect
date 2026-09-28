@@ -21,12 +21,14 @@ const ACTIONS = {
   "unconference.proposal": {
     phases: ["proposing"],
     roles: ["participant"],
+    max_payload_bytes: 32768,
     validate: (p) => p && typeof p.title === "string" && p.title.length >= 1 && p.title.length <= 300 && typeof p.content === "string" && p.content.length >= 1 && p.content.length <= 10000 && Object.keys(p).every((k) => ["title", "content"].includes(k)),
     cap: 3,
   },
   "unconference.vote": {
     phases: ["voting"],
     roles: ["participant"],
+    max_payload_bytes: 1024,
     validate: (p) => p && Object.keys(p).length === 0,
     target: "unconference.proposal",
     cap: 3,
@@ -405,6 +407,10 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
     if (body.intent !== undefined && (typeof body.intent !== "string" || body.intent.length > 2000)) throw new Problem("VALIDATION_FAILED", "intent must be a string of at most 2000 characters");
     const extra = Object.keys(body).filter((k) => !["kind", "payload", "mandate", "expect_phase", "target_action", "intent"].includes(k));
     if (extra.length) throw new Problem("VALIDATION_FAILED", `unknown member ${extra[0]}`);
+    // step 0 size: the pack's per-action payload limit is reported before credentials (ASTRA-R2-09 ruling)
+    const sized = ACTIONS[body.kind];
+    if (sized && Buffer.byteLength(JSON.stringify(body.payload ?? {}), "utf8") > sized.max_payload_bytes)
+      throw new Problem("PAYLOAD_TOO_LARGE", "payload over limit", { limit_bytes: sized.max_payload_bytes });
     const mandate = body.mandate ?? "human_directed";
     // steps 1/1a
     const { t, bearer } = authenticate(headers);
