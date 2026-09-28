@@ -2,12 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:ilp:schema:identity-claim:v2",
   "title": "ILP identity claim — payload of an ilp-claim+jwt (R-ID-17)",
-  "$comment": "exp − iat ≤ 86400 is a semantic rule (R-ID-18). No email or any member outside this set (R-SEC-19); `x_` members are tolerated on receive only.",
+  "$comment": "exp − iat ≤ 86400 is a semantic rule (R-ID-18). The member set is CLOSED, including to `x_` extensions (R-ID-18 overrides R-CORE-39(c) for claims); a receiver still ignores unknown members (R-CORE-39(b)).",
   "type": "object",
   "additionalProperties": false,
-  "patternProperties": {
-    "^x_": {}
-  },
   "required": [
     "iss",
     "sub",
@@ -75,9 +72,6 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "patternProperties": {
-            "^x_": {}
-          },
           "required": [
             "id",
             "display_name",
@@ -116,9 +110,6 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "patternProperties": {
-            "^x_": {}
-          },
           "required": [
             "kind",
             "text_version",

@@ -34,9 +34,9 @@
     },
     {
       "id": "JCS-7",
-      "input": "{\"s\":\"é\"}",
-      "expect": "{\"s\":\"é\"}",
-      "note": "decomposed stays decomposed"
+      "input": "{\"s\":\"é\"}",
+      "expect": "{\"s\":\"é\"}",
+      "note": "decomposed (U+0065 U+0301) stays decomposed; never NFC-normalized"
     },
     {
       "id": "JCS-BAD-1",

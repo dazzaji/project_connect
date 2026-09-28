@@ -5,10 +5,11 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonicalize } from "../lib/jcs.mjs";
+import { createPrivateKey as cpk, sign as edSign } from "node:crypto";
 import { b64u, publicJwkOf, sha256B64u, signDetached, signJws, TYP } from "../lib/jws.mjs";
 import { GENESIS_HASH, receiptHash } from "../lib/receipt.mjs";
 
-const OUT = join(dirname(fileURLToPath(import.meta.url)), "..", "vectors");
+const OUT = process.env.ILP_GEN_OUT ? join(process.env.ILP_GEN_OUT, "vectors") : join(dirname(fileURLToPath(import.meta.url)), "..", "vectors");
 
 /** Test-only key from a published 32-byte seed. NEVER use these keys outside vectors. */
 function seededKey(kid, seedByte) {
@@ -110,6 +111,15 @@ const withHeader = (j, header) => {
   return `${b64u.encode(Buffer.from(JSON.stringify(header)))}.${p}.${s}`;
 };
 
+// Sign raw JSON text (not JCS) so out-of-profile values can be carried in a correctly signed JWS.
+function signRaw(headerObj, payloadText, jwk) {
+  const input = `${b64u.encode(Buffer.from(JSON.stringify(headerObj)))}.${b64u.encode(Buffer.from(payloadText, "utf8"))}`;
+  const k = cpk({ key: { kty: "OKP", crv: "Ed25519", d: jwk.d, x: jwk.x }, format: "jwk" });
+  return `${input}.${b64u.encode(edSign(null, Buffer.from(input, "ascii"), k))}`;
+}
+const grantText = JSON.stringify(grant);
+const hdr = { alg: "EdDSA", kid: HOST.kid, typ: TYP.grant };
+
 const jws = {
   keys,
   cases: [
@@ -124,6 +134,11 @@ const jws = {
     { id: "JWS-BAD-8", kind: "claim", typ: TYP.claim, jws: signJws(claim, HOME, TYP.grant), expect: "VALIDATION_FAILED", note: "typ mismatch (a grant typ on a claim)" },
     { id: "JWS-BAD-9", kind: "claim", typ: TYP.claim, jws: good.claim.split(".").slice(0, 2).join("."), expect: "VALIDATION_FAILED", note: "two-part compact" },
     { id: "JWS-BAD-10", kind: "claim", typ: TYP.claim, jws: withHeader(good.claim, { alg: "EdDSA", typ: TYP.claim }), expect: "UNKNOWN_SIGNER", note: "no kid" },
+    { id: "JWS-BAD-11", kind: "grant", typ: TYP.grant, jws: signRaw({ ...hdr, crit: ["x_unimplemented"], x_unimplemented: true }, grantText, HOST), expect: "SIGNATURE_INVALID", note: "correctly signed, unsupported critical extension (RFC 7515 §4.1.11)" },
+    { id: "JWS-BAD-12", kind: "grant", typ: TYP.grant, jws: signRaw(hdr, grantText.replace('"iat":', '"x_probe":1.5,"iat":'), HOST), expect: "VALIDATION_FAILED", note: "correctly signed, non-integer number (R-CORE-35)" },
+    { id: "JWS-BAD-13", kind: "grant", typ: TYP.grant, jws: signRaw(hdr, grantText.replace('"iat":', '"x_probe":9007199254740993,"iat":'), HOST), expect: "VALIDATION_FAILED", note: "correctly signed, integer beyond ±(2^53−1)" },
+    { id: "JWS-BAD-14", kind: "grant", typ: TYP.grant, jws: signRaw(hdr, grantText.replace('"iat":', '"x_probe":1e400,"iat":'), HOST), expect: "VALIDATION_FAILED", note: "correctly signed, infinity" },
+    { id: "JWS-BAD-15", kind: "grant", typ: TYP.grant, jws: signRaw(hdr, grantText.replace('"role":"participant"', '"role":"\\ud800"'), HOST), expect: "VALIDATION_FAILED", note: "correctly signed, lone surrogate" },
   ],
   resolve: "Resolve `kid` only among keys published by the payload's `iss` (keys[iss]).",
 };
@@ -136,7 +151,7 @@ const jcs = {
     { id: "JCS-4", input: '{"n":-0}', expect: '{"n":0}' },
     { id: "JCS-5", input: '{"n":9007199254740991}', expect: '{"n":9007199254740991}' },
     { id: "JCS-6", input: '{"s":"é"}', expect: '{"s":"é"}', note: "precomposed; never normalized" },
-    { id: "JCS-7", input: '{"s":"é"}', expect: '{"s":"é"}', note: "decomposed stays decomposed" },
+    { id: "JCS-7", input: '{"s":"e\u0301"}', expect: '{"s":"e\u0301"}', note: "decomposed (U+0065 U+0301) stays decomposed; never NFC-normalized" },
     { id: "JCS-BAD-1", input: '{"n":1.5}', expect: "reject", note: "non-integer" },
     { id: "JCS-BAD-2", input: '{"n":1e400}', expect: "reject", note: "infinity" },
     { id: "JCS-BAD-3", input: '{"n":9007199254740993}', expect: "reject", note: "beyond ±(2^53−1)" },
@@ -191,6 +206,13 @@ const badChains = [];
   const c = clone(good_chain);
   delete c[2].authorization_grant;
   badChains.push({ id: "RCPT-BAD-5", chain: c, expect: "reject", note: "authorization_grant stripped from a hashed receipt" });
+}
+
+{
+  const c = clone(good_chain).slice(0, 2);
+  c[1].event = "ilp:host.example:event:00000000-0000-7000-8000-000000000099";
+  c[1].hash = receiptHash(c[1]);
+  badChains.push({ id: "RCPT-BAD-6", chain: c, expect: "reject", note: "links and hashes recompute, but the chain spans two events" });
 }
 
 const receipts = {

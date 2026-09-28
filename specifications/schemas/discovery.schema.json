@@ -223,7 +223,8 @@
         "mode",
         "join_requests",
         "revocation_bound_s",
-        "active_kid"
+        "active_kid",
+        "remote_session_policy"
       ],
       "properties": {
         "mode": {
@@ -242,15 +243,63 @@
         "active_kid": {
           "type": "string",
           "minLength": 1,
-          "$comment": "SCR-3: the single active signing key (R-CORE-34(d))"
+          "$comment": "SCR-3: the single active signing key (R-CORE-34(g))"
         },
-        "conformance_mode": {
+        "remote_session_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^x_": {}
+          },
+          "required": [
+            "on_stale_revocation_state",
+            "after_s"
+          ],
+          "properties": {
+            "on_stale_revocation_state": {
+              "enum": [
+                "pause",
+                "continue"
+              ]
+            },
+            "after_s": {
+              "type": "integer",
+              "minimum": 1,
+              "$comment": "default 2 × revocation_bound_s (R-FED-21a)"
+            }
+          }
+        }
+      }
+    },
+    "conformance": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x_": {}
+      },
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
           "enum": [
             "production",
             "certification"
           ]
+        },
+        "revocation_bound_s": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "grant_ttl_s": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "contact": {
+          "type": "string"
         }
-      }
+      },
+      "$comment": "R-OPS-10: declared parameters of a node under certification"
     },
     "current_event": {
       "type": "object",

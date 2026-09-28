@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const OUT = join(dirname(fileURLToPath(import.meta.url)), "..", "specifications", "schemas");
+const OUT = process.env.ILP_GEN_OUT ? join(process.env.ILP_GEN_OUT, "schemas") : join(dirname(fileURLToPath(import.meta.url)), "..", "specifications", "schemas");
 const S = "https://json-schema.org/draft/2020-12/schema";
 
 const X = { "^x_": {} };
@@ -16,6 +16,16 @@ const obj = (required, properties, extra = {}) => ({
   properties,
   ...extra,
 });
+// Identity claims are a closed member set (R-ID-18, R-SEC-19): no extension members, at any level.
+const closed = (required, properties, extra = {}) => {
+  const strip = (s) => {
+    if (!s || typeof s !== "object") return s;
+    if (Array.isArray(s)) return s.map(strip);
+    const { patternProperties, ...rest } = s;
+    return Object.fromEntries(Object.entries(rest).map(([k, v]) => [k, strip(v)]));
+  };
+  return strip(obj(required, properties, extra));
+};
 const globalId = { type: "string", pattern: "^ilp:[a-z0-9.-]+:[a-z_]+:[A-Za-z0-9-]+$" };
 const gid = (type) => ({ type: "string", pattern: `^ilp:[a-z0-9.-]+:${type}:[A-Za-z0-9-]+$` });
 const host = { type: "string", pattern: "^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$", maxLength: 253 };
@@ -88,13 +98,22 @@ const schemas = {
           compatible_versions: { type: "array", items: { type: "string", pattern: "^[0-9]+\\.[0-9]+$" } },
         }),
       },
-      federation: obj(["mode", "join_requests", "revocation_bound_s", "active_kid"], {
+      federation: obj(["mode", "join_requests", "revocation_bound_s", "active_kid", "remote_session_policy"], {
         mode: { enum: ["allowlist"] },
         join_requests: { type: "boolean" },
         revocation_bound_s: { type: "integer", minimum: 1, maximum: 600 },
-        active_kid: { type: "string", minLength: 1, $comment: "SCR-3: the single active signing key (R-CORE-34(d))" },
-        conformance_mode: { enum: ["production", "certification"] },
+        active_kid: { type: "string", minLength: 1, $comment: "SCR-3: the single active signing key (R-CORE-34(g))" },
+        remote_session_policy: obj(["on_stale_revocation_state", "after_s"], {
+          on_stale_revocation_state: { enum: ["pause", "continue"] },
+          after_s: { type: "integer", minimum: 1, $comment: "default 2 × revocation_bound_s (R-FED-21a)" },
+        }),
       }),
+      conformance: obj(["mode"], {
+        mode: { enum: ["production", "certification"] },
+        revocation_bound_s: { type: "integer", minimum: 1 },
+        grant_ttl_s: { type: "integer", minimum: 1 },
+        contact: { type: "string" },
+      }, { $comment: "R-OPS-10: declared parameters of a node under certification" }),
       current_event: obj(["slug", "title", "url"], {
         slug: { type: "string" },
         title: { type: "string" },
@@ -107,7 +126,7 @@ const schemas = {
   "identity-claim": schema(
     { id: "identity-claim", gen: 2 },
     "ILP identity claim — payload of an ilp-claim+jwt (R-ID-17)",
-    obj(
+    closed(
       ["iss", "sub", "aud", "iat", "exp", "jti", "display_name", "verified", "verified_method", "agent", "purpose", "event", "consent_accepted"],
       {
         iss: baseUrl,
@@ -139,7 +158,7 @@ const schemas = {
         },
       },
     ),
-    "exp − iat ≤ 86400 is a semantic rule (R-ID-18). No email or any member outside this set (R-SEC-19); `x_` members are tolerated on receive only.",
+    "exp − iat ≤ 86400 is a semantic rule (R-ID-18). The member set is CLOSED, including to `x_` extensions (R-ID-18 overrides R-CORE-39(c) for claims); a receiver still ignores unknown members (R-CORE-39(b)).",
   ),
 
   "authorization-grant": schema(

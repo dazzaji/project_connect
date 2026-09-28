@@ -24,6 +24,16 @@
   },
   "exclusions": [
     {
+      "what": "R-CORE-34(a) key storage outside the database",
+      "why": "not observable black-box",
+      "verification": "review"
+    },
+    {
+      "what": "R-OPS-11 build identity changes with deployed code",
+      "why": "requires a controlled rebuild",
+      "verification": "review"
+    },
+    {
       "what": "transport/TLS",
       "why": "D10: HTTP on loopback; transport not proven"
     },
@@ -99,13 +109,15 @@
     "operator_credential": "ilpo_ scoped conformance-operator credential: one test event on the host; approve/reject joins, revoke grants and tokens; revocable, audited.",
     "peering_credential": "ilpf_ peering-scoped credential: add, suspend, reinstate, remove peers.",
     "provisioning_credential": "ilpp_ SCR-1 credential: create principals marked synthetic, mint claims for them, revoke them. Never usable on non-synthetic principals.",
-    "events": "Created per scenario and repetition by the host's admin at startup: E1 (federated, live, remote allowed), E2 (same policy), E-short (grant_ttl_s = short_grant_ttl_s), E-private (private control), E-local (non-federated control with a local participant).",
+    "events": "Created per scenario and repetition by the host's admin at startup: E1 (federated, live, remote allowed), E2 (same policy), E-short (grant_ttl_s = short_grant_ttl_s), E-mandate (mandates_allowed = [human_directed, human_approved]), E-excl (grant actions [proposal, vote], exclusions [vote]), E-private (private control), E-local (non-federated control with a local participant). Federation policy is set through federation_policy before the run.",
+    "non_synthetic_principal": "The host admin's own human global ID, given to the runner so PC-PROV-1 can attempt forbidden operations on it.",
     "outage_control": "PC-REV-4 and PC-REV-5 stop and restart the home node through the local harness (declared ops drill; the host under test is never touched)."
   },
   "interfaces": {
     "discovery": "GET /.well-known/interlateral.json",
     "peers_list": "GET /ilp/v1/federation/peers",
-    "peers_add": "POST /ilp/v1/federation/peers {base_url} [peering credential]",
+    "peers_add": "POST /ilp/v1/federation/peers {base_url} [peering credential] (R-FED-3: base_url = scheme://host[:port])",
+    "federation_policy": "POST /ilp/v1/events/{event}/federation-policy {grant_ttl_s, mandates_allowed, grant_actions, grant_exclusions} [admin, setup only]",
     "peers_state": "POST /ilp/v1/federation/peers/{host}/(suspend|reinstate|remove) [peering credential]",
     "directory": "GET /ilp/v1/federation/events[?scope=aggregated]",
     "claims": "POST /ilp/v1/claims {purpose, event, aud, agent, on_behalf_of, consent_accepted} [provisioning credential]",
@@ -233,6 +245,47 @@
       "build": "out-of-scope vote while the event phase forbids voting",
       "expect": "GRANT_SCOPE_VIOLATION",
       "step": 6
+    },
+    {
+      "id": "NF-17",
+      "test": "PC-ENF-10",
+      "build": "Authorization: Bearer <the participant's own grant JWS>",
+      "expect": "AUTH_INVALID",
+      "step": 1
+    },
+    {
+      "id": "NF-18",
+      "test": "PC-ENF-10",
+      "build": "ILP-Grant: <own grant>, no Authorization header",
+      "expect": "AUTH_MISSING",
+      "step": 1
+    },
+    {
+      "id": "NF-19",
+      "test": "PC-ENF-11",
+      "build": "vote on E-excl (listed in authorization_details and exclusions)",
+      "expect": "GRANT_SCOPE_VIOLATION",
+      "step": 6
+    },
+    {
+      "id": "NF-20",
+      "test": "PC-ENF-11",
+      "build": "proposal number cap+1 under a proposal grant",
+      "expect": "VOTE_CAP_EXCEEDED | CONFLICT",
+      "step": 10
+    },
+    {
+      "id": "NF-21",
+      "test": "PC-PROV-1",
+      "build": "ilpp_ used to mint a claim on behalf of the admin human; to approve a join; to add a peer",
+      "expect": "FORBIDDEN"
+    },
+    {
+      "id": "NF-22",
+      "test": "PC-REV-4",
+      "build": "admitted remote participant acts after the home has been unreachable for 2 × bound",
+      "expect": "REVOCATION_STATE_UNKNOWN",
+      "step": 4
     }
   ],
   "evidence_packet": {
@@ -256,19 +309,21 @@
         "R-CORE-39"
       ],
       "expect": "200; schema discovery v2 valid",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-DISC-2",
       "gate": "SG-2",
       "role": "both",
       "severity": "blocker",
-      "title": "Build identity: instance.software.build and instance.deployment_id are present, stable across fetches, and identical to the values bound into the node's signed attestation",
+      "title": "Build identity is present and stable: instance.software.build and instance.deployment_id are non-empty, equal across fetches, and equal to the values bound into the evidence packet. (That the build changes when code changes is verify: review, R-OPS-11.)",
       "traces": [
         "R-CORE-30"
       ],
       "expect": "two fetches equal; non-empty build and deployment_id",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-DISC-3",
@@ -282,21 +337,37 @@
         "R-FED-15"
       ],
       "expect": "spec_versions ∋ 0.0.2",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-DISC-4",
       "gate": "SG-2",
       "role": "both",
       "severity": "blocker",
-      "title": "Keys: every key is an Ed25519 OKP JWK; federation.active_kid names a listed key; every signed object observed in the run carries the active kid; revocation_bound_s ≤ profile bound",
+      "title": "Keys: every key is an Ed25519 OKP JWK; federation.active_kid names a listed key; every signed object observed in the run carries the active kid; revocation_bound_s ≤ profile bound; the remote-session policy is declared",
       "traces": [
         "R-CORE-21",
         "R-CORE-34",
-        "R-FED-20"
+        "R-FED-20",
+        "R-FED-21"
       ],
       "expect": "active kid used by claims, grants, revocations",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
+    },
+    {
+      "id": "PC-DISC-5",
+      "gate": "SG-3",
+      "role": "both",
+      "severity": "major",
+      "title": "Key custody ops drill: started in production mode with its key file absent, the node refuses to start; started in declared development mode with a key file present, the node does not replace it",
+      "traces": [
+        "R-CORE-34"
+      ],
+      "expect": "refusal; key unchanged",
+      "since": "0.0.2",
+      "verification": "ops-drill"
     },
     {
       "id": "PC-CORE-1",
@@ -310,7 +381,8 @@
         "R-CORE-11"
       ],
       "expect": "every negative response in the run conforms",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-CORE-2",
@@ -323,7 +395,8 @@
         "R-FED-15"
       ],
       "expect": "202 pending for both",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-CORE-3",
@@ -336,7 +409,8 @@
         "R-FED-14"
       ],
       "expect": "SIGNATURE_INVALID; UNKNOWN_SIGNER",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-CORE-4",
@@ -349,7 +423,8 @@
         "R-AUTHZ-7"
       ],
       "expect": "GRANT_SCOPE_VIOLATION",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-CORE-5",
@@ -363,7 +438,8 @@
         "R-CORE-35"
       ],
       "expect": "chain verifies with the reference library",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-PEER-1",
@@ -378,7 +454,8 @@
         "R-FED-16"
       ],
       "expect": "active both ways",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-PEER-2",
@@ -391,7 +468,8 @@
         "R-FED-14"
       ],
       "expect": "NOT_A_PEER",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-PEER-3",
@@ -404,7 +482,8 @@
         "R-FED-16"
       ],
       "expect": "state + record",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-DIR-1",
@@ -417,7 +496,8 @@
         "R-FED-19"
       ],
       "expect": "entry present and valid",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-DIR-2",
@@ -430,7 +510,8 @@
         "R-FED-17"
       ],
       "expect": "absent",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-DIR-3",
@@ -442,7 +523,8 @@
         "R-FED-6"
       ],
       "expect": "aggregated entry equal on identifying members",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-DIR-4",
@@ -454,7 +536,8 @@
         "R-FED-19"
       ],
       "expect": "monotonic; closed reported",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-IDC-1",
@@ -469,7 +552,8 @@
         "R-CORE-38"
       ],
       "expect": "valid claim",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-IDC-2",
@@ -484,7 +568,8 @@
         "R-ID-18"
       ],
       "expect": "202; AUTHZ_REQUIRED; no side effects",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-IDC-3",
@@ -498,7 +583,8 @@
         "R-CORE-38"
       ],
       "expect": "each code",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-GRANT-1",
@@ -514,7 +600,8 @@
         "R-AUTHZ-6"
       ],
       "expect": "valid grant bound to the delivered token",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-GRANT-2",
@@ -526,7 +613,8 @@
         "R-AUTHZ-9"
       ],
       "expect": "active; same JWS",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-GRANT-3",
@@ -539,7 +627,8 @@
         "R-CORE-38"
       ],
       "expect": "GRANT_EXPIRED",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-RCPT-1",
@@ -555,7 +644,8 @@
         "R-FED-9"
       ],
       "expect": "receipt as specified",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-RCPT-2",
@@ -567,7 +657,8 @@
         "R-CORE-16"
       ],
       "expect": "one action",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-RCPT-3",
@@ -581,7 +672,8 @@
         "R-FED-7"
       ],
       "expect": "receipts present",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-ENF-1",
@@ -594,7 +686,8 @@
         "R-FED-1"
       ],
       "expect": "201; one action",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-ENF-2",
@@ -607,7 +700,8 @@
         "R-AUTHZ-11"
       ],
       "expect": "GRANT_SCOPE_VIOLATION; no side effects",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-ENF-3",
@@ -621,7 +715,8 @@
         "R-AUTHZ-11"
       ],
       "expect": "GRANT_EVENT_MISMATCH",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-ENF-4",
@@ -631,10 +726,11 @@
       "title": "A presented grant issued by another host is rejected with GRANT_AUDIENCE_MISMATCH, with no side effects",
       "traces": [
         "R-AUTHZ-4",
-        "SCR-2"
+        "R-AUTHZ-15"
       ],
       "expect": "GRANT_AUDIENCE_MISMATCH",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-ENF-5",
@@ -644,10 +740,11 @@
       "title": "A presented grant with an altered payload byte is rejected with SIGNATURE_INVALID, with no side effects",
       "traces": [
         "R-CORE-36",
-        "SCR-2"
+        "R-AUTHZ-15"
       ],
       "expect": "SIGNATURE_INVALID",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-ENF-6",
@@ -657,10 +754,11 @@
       "title": "A presented grant bound to another participant's token is rejected with GRANT_BINDING_MISMATCH, with no side effects",
       "traces": [
         "R-AUTHZ-6",
-        "SCR-2"
+        "R-AUTHZ-15"
       ],
       "expect": "GRANT_BINDING_MISMATCH",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-ENF-7",
@@ -673,7 +771,8 @@
         "R-AUTHZ-11"
       ],
       "expect": "GRANT_EXPIRED",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-ENF-8",
@@ -687,19 +786,49 @@
         "R-AUTHZ-9"
       ],
       "expect": "revoked on next use; record",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-ENF-9",
       "gate": "SG-3",
       "role": "host",
       "severity": "major",
-      "title": "A grant carrying mandates_allowed rejects an act declaring another mandate with GRANT_SCOPE_VIOLATION + code_detail MANDATE_NOT_ALLOWED",
+      "title": "On the E-mandate event, the delivered grant carries mandates_allowed = [human_directed, human_approved] (asserted first); an act declaring standing_instruction is rejected with GRANT_SCOPE_VIOLATION + code_detail MANDATE_NOT_ALLOWED and no side effects",
       "traces": [
         "R-AUTHZ-13"
       ],
       "expect": "MANDATE_NOT_ALLOWED",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
+    },
+    {
+      "id": "PC-ENF-10",
+      "gate": "SG-3",
+      "role": "host",
+      "severity": "blocker",
+      "title": "A grant is not a bearer credential: Authorization: Bearer <grant JWS> is rejected with AUTH_INVALID, and ILP-Grant with no Authorization is rejected with AUTH_MISSING, both with no side effects",
+      "traces": [
+        "R-AUTHZ-6",
+        "R-AUTHZ-11"
+      ],
+      "expect": "AUTH_INVALID; AUTH_MISSING",
+      "since": "0.0.2",
+      "verification": "black-box"
+    },
+    {
+      "id": "PC-ENF-11",
+      "gate": "SG-3",
+      "role": "host",
+      "severity": "blocker",
+      "title": "Narrowing only: (a) on the E-excl event, whose grant lists unconference.vote in both authorization_details and exclusions, a vote is rejected with GRANT_SCOPE_VIOLATION; (b) a grant-permitted proposal beyond the engine's per-participant cap is rejected (VOTE_CAP_EXCEEDED or CONFLICT); both with no side effects",
+      "traces": [
+        "R-AUTHZ-8",
+        "R-AUTHZ-11"
+      ],
+      "expect": "rejected; no side effects",
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-REV-1",
@@ -712,7 +841,8 @@
         "R-CORE-36"
       ],
       "expect": "records verify",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-REV-2",
@@ -727,33 +857,36 @@
         "R-FED-20"
       ],
       "expect": "rejected within bound",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-REV-3",
       "gate": "SG-3",
       "role": "host",
       "severity": "blocker",
-      "title": "The host suspends the home peer: the remote participant's next act and new joins are rejected with PEER_SUSPENDED; after reinstatement a fresh join and act succeed",
+      "title": "The host suspends the home peer: the remote participant's next act and a new join are rejected with PEER_SUSPENDED and the grant status reads suspended; after reinstatement the ORIGINAL token and grant act again (status active) — suspension is resumable",
       "traces": [
         "R-FED-11",
         "R-FED-16",
         "R-AUTHZ-9"
       ],
-      "expect": "PEER_SUSPENDED then recovery",
-      "since": "0.0.2"
+      "expect": "PEER_SUSPENDED then original credentials resume",
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-REV-4",
       "gate": "SG-3",
       "role": "host",
       "severity": "blocker",
-      "title": "Fail closed: when the home's revocation feed cannot be refreshed for 2 × bound, a new join from that peer is rejected with REVOCATION_STATE_UNKNOWN (503, retry_after)",
+      "title": "Fail closed: when the home's revocation feed cannot be refreshed for 2 × bound, a new join from that peer is rejected with REVOCATION_STATE_UNKNOWN (503, retry_after), and an already-admitted remote participant is handled per the declared remote_session_policy (pause → REVOCATION_STATE_UNKNOWN); after the home returns and a refresh succeeds, that participant acts again",
       "traces": [
         "R-FED-21"
       ],
-      "expect": "REVOCATION_STATE_UNKNOWN",
-      "since": "0.0.2"
+      "expect": "REVOCATION_STATE_UNKNOWN; declared policy; recovery",
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-REV-5",
@@ -766,7 +899,21 @@
         "R-FED-21"
       ],
       "expect": "local act accepted",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
+    },
+    {
+      "id": "PC-PROV-1",
+      "gate": "SG-3",
+      "role": "home",
+      "severity": "blocker",
+      "title": "The ilpp_ provisioning credential cannot mint a claim for, or revoke, a non-synthetic principal (FORBIDDEN), and cannot moderate joins or change peers (FORBIDDEN); no state changes",
+      "traces": [
+        "R-CONF-6"
+      ],
+      "expect": "FORBIDDEN; no state change",
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-INTEROP-AB",
@@ -778,7 +925,8 @@
         "R-CONF-2"
       ],
       "expect": "all pass in SC-1",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-INTEROP-BA",
@@ -790,7 +938,8 @@
         "R-CONF-2"
       ],
       "expect": "all pass in SC-2",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-EXP-1",
@@ -804,7 +953,8 @@
         "R-CORE-36"
       ],
       "expect": "bundle verifies",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     },
     {
       "id": "PC-VER-1",
@@ -817,7 +967,8 @@
         "R-CONF-1"
       ],
       "expect": "exit 0; negatives non-zero",
-      "since": "0.0.2"
+      "since": "0.0.2",
+      "verification": "black-box"
     }
   ]
 }

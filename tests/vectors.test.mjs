@@ -2,7 +2,8 @@
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -84,9 +85,15 @@ test("Credential binding vector", () => {
   assert.equal(createHash("sha256").update(ctx.participant_token, "utf8").digest("base64url"), ctx.expected_binding);
 });
 
-test("Vectors, schemas, and profile regenerate byte-identically", () => {
-  const files = ["vectors/jcs.json", "vectors/jws.json", "vectors/receipts.json", "vectors/detached.json", "vectors/context.json", "profile/pc-0.1-s1.json", "profile/pc-0.1-s1.sha256"];
-  const before = files.map((f) => readFileSync(join(ROOT, f), "utf8"));
-  for (const tool of ["gen-schemas.mjs", "gen-vectors.mjs", "gen-profile.mjs"]) execFileSync(process.execPath, [join(ROOT, "tools", tool)], { stdio: "ignore" });
-  files.forEach((f, i) => assert.equal(readFileSync(join(ROOT, f), "utf8"), before[i], `${f} changed on regeneration`));
+test("Schemas, vectors, and profile regenerate byte-identically (into a temp dir, never repairing the checked-in files)", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "pc-regen-"));
+  for (const tool of ["gen-schemas.mjs", "gen-vectors.mjs", "gen-profile.mjs"]) execFileSync(process.execPath, [join(ROOT, "tools", tool)], { stdio: "ignore", env: { ...process.env, ILP_GEN_OUT: tmp } });
+  const pairs = [
+    ...readdirSync(join(ROOT, "specifications", "schemas")).map((f) => [join(ROOT, "specifications", "schemas", f), join(tmp, "schemas", f)]),
+    ...readdirSync(join(ROOT, "vectors")).map((f) => [join(ROOT, "vectors", f), join(tmp, "vectors", f)]),
+    ...readdirSync(join(ROOT, "profile")).map((f) => [join(ROOT, "profile", f), join(tmp, "profile", f)]),
+  ];
+  assert.equal(readdirSync(join(tmp, "schemas")).length, readdirSync(join(ROOT, "specifications", "schemas")).length, "schema file set differs");
+  for (const [checkedIn, fresh] of pairs) assert.equal(readFileSync(checkedIn, "utf8"), readFileSync(fresh, "utf8"), `${checkedIn} differs from regeneration`);
+  rmSync(tmp, { recursive: true, force: true });
 });

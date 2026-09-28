@@ -274,7 +274,9 @@ Specifications and conformance tests evolve together. Every artifact that can ch
   - **SCR-1** — Synthetic-principal provisioning credential (R-CONF-6).
   - **SCR-2** — Presented grants, the `ILP-Grant` request header, and precedence step 4a (R-AUTHZ-15); identity presented as authority (R-AUTHZ-16); event scoping of tokens under grants (R-AUTHZ-17).
   - **SCR-3** — `federation.active_kid` in discovery (R-CORE-34(g)).
-  - **SCR-4** — Peer records and reinstatement records (R-FED-3a, R-FED-10a); the claim-minting request (R-FED-7a).
+  - **SCR-4** — Peer records and reinstatement records (R-FED-3a, R-FED-10a); the claim-minting request (R-FED-7a); the `base_url` peering request (R-FED-3).
+  - **SCR-6** — The declared remote-session policy (R-FED-21a).
+- **Tightened:** JWS verifiers reject unsupported `crit` extensions and signed values outside the canonicalization profile (R-CORE-35, R-CORE-36); identity claims are closed to `x_` members (R-CORE-39(c)); receipt chains are verified per event.
 - **Credential prefixes** `ilpo_`, `ilpf_`, and `ilpp_` registered (§17.11).
 
 ---
@@ -720,7 +722,7 @@ Example (0.0.1):
 - **R-CORE-39 [NEW 0.0.1] — Strict on emit, lenient on receive.**
   - **(a) Emit.** A producer MUST emit only documents valid under the strict schema for a specification version it declares (R-CORE-31).
   - **(b) Receive.** A consumer of federation payloads and signed objects MUST ignore unknown members (R-FED-15). Unknown members MUST NOT make the object fail, other than failing a signature check, which covers the bytes as received.
-  - **(c) Extensions.** Extension members MUST be named with the prefix `x_`. Strict schemas SHALL permit `^x_` members (OI-2).
+  - **(c) Extensions.** Extension members MUST be named with the prefix `x_`. Strict schemas SHALL permit `^x_` members (OI-2), **except** the identity claim, whose member set is closed to extensions as well (R-ID-18, R-SEC-19) *[CHANGED 0.0.2]*.
   - **(d) Testing.** Conformance tests validate an implementation's **own output** against the strict schemas, and validate its **handling of peer input** with unknown members present.
   - *Rationale: the baseline's closed schemas (`additionalProperties: false`) contradicted its own forward-compatibility rule (K-4). The reference implementation's live discovery document already fails its own schema (K-3).*
 
@@ -1281,7 +1283,7 @@ See §14.
   - *[OPEN: OI-3]* Now that revocation records are themselves signed (§10.5), should request signing remain REQUIRED for all peer-only endpoints at 0.1.0? A profile MAY exclude it (§15.4).
 - **R-FED-3** — Peering.
   - Peering is mutual and explicit (an allowlist).
-  - `POST /ilp/v1/federation/peers {host}` is an admin action that fetches and pins the peer's discovery document.
+  - `POST /ilp/v1/federation/peers {base_url}` is an admin action (or one taken with a peering-scoped credential, R-CONF-3) that fetches and pins the peer's discovery document. *[CHANGED 0.0.2, SCR-4]* `base_url` is `scheme://host[:port]` with no path; the peer's `instance.host` MUST equal the host in `base_url`. The baseline's `{host}` form remains accepted as shorthand for `https://<host>`.
   - Peer states are `proposed → active → suspended → removed`. Every change is audited and receipted.
   - Only `active` peers are honored.
 - **R-FED-4** — `GET /ilp/v1/federation/peers` is public and lists active peers.
@@ -1359,6 +1361,7 @@ The steps:
   - If a peer's revocation state cannot be refreshed within **2 × bound**, new admissions from that peer MUST fail closed with `REVOCATION_STATE_UNKNOWN`.
   - The policy for existing remote sessions MUST be declared. The default: remote sessions continue for at most 2 × bound after the last good refresh, then pause (resumable).
   - Local events and local participants are never affected (R-FED-12).
+- **R-FED-21a [NEW 0.0.2, SCR-6] — Declared remote-session policy.** The policy for existing remote sessions is declared in discovery as `federation.remote_session_policy: { on_stale_revocation_state: "pause" | "continue", after_s }`. Under `pause`, an admitted remote participant's governed actions are rejected with `REVOCATION_STATE_UNKNOWN` once the home's revocation state is older than `after_s`, and resume automatically after the next successful refresh.
 
 ### 10.6 Failure and trust boundaries
 
