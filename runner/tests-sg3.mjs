@@ -119,12 +119,18 @@ export const SG3_TESTS = {
   async "PC-CORE-3"(ctx) {
     const E1 = ctx.events.E1;
     const post = (claim) => http("POST", `${ctx.host.base}/ilp/v1/events/${E1.id}/join-requests`, { body: { claim } });
+    // every rejected claim leaves no trace: feed, receipts and the join list are unchanged (SG2V2-RUNNER-NEGATIVE-GAP)
+    const joins = async () => expectOk(await http("GET", `${ctx.host.base}/ilp/v1/events/${E1.id}/join-requests`, { bearer: ctx.creds.operator.E1 }), 200, "join list").items.length;
+    const before = await observe(ctx.host, E1.id);
+    const joinsBefore = await joins();
     expectProblem(await post(auxClaim(ctx, E1, {}, { alg: "none", kid: ctx.aux.key.kid, typ: TYP.claim })), "SIGNATURE_INVALID", "alg none");
     expectProblem(await post(auxClaim(ctx, E1, {}, { alg: "HS256", kid: ctx.aux.key.kid, typ: TYP.claim })), "SIGNATURE_INVALID", "alg HS256");
     const stray = generateKey("unpublished-kid");
     const t = nowS();
     const unknownKid = signJws({ iss: ctx.aux.base, sub: `ilp:${hostOf(ctx.aux.base)}:human:00000000-0000-7000-8000-0000000000u1`, aud: ctx.host.base, iat: t, exp: t + 600, jti: `claim-kid-${ctx.tag}-${Date.now()}`, display_name: "Unknown kid", verified: true, verified_method: null, agent: null, purpose: "event_join", event: E1.global_id, consent_accepted: null }, stray.privateJwk, TYP.claim);
     expectProblem(await post(unknownKid), "UNKNOWN_SIGNER", "unpublished kid");
+    await expectNoSideEffects(ctx.host, E1.id, before, "rejected claims (alg none, HS256, unpublished kid)");
+    check((await joins()) === joinsBefore, "a rejected claim created a join request");
     return { alg_none: "SIGNATURE_INVALID", alg_hs256: "SIGNATURE_INVALID", unknown_kid: "UNKNOWN_SIGNER" };
   },
   async "PC-CORE-4"(ctx) {
@@ -158,7 +164,9 @@ export const SG3_TESTS = {
     const t = nowS();
     const claim = signJws({ iss: "http://stranger.localhost:4998", sub: "ilp:stranger.localhost:human:00000000-0000-7000-8000-000000000s01", aud: ctx.host.base, iat: t, exp: t + 600, jti: `claim-stranger-${ctx.tag}`, display_name: "Stranger", verified: false, verified_method: null, agent: null, purpose: "event_join", event: E1.global_id, consent_accepted: null }, stray.privateJwk, TYP.claim);
     const before = expectOk(await http("GET", `${ctx.host.base}/ilp/v1/events/${E1.id}/join-requests`, { bearer: ctx.creds.operator.E1 }), 200, "join list").items.length;
+    const obs = await observe(ctx.host, E1.id);
     expectProblem(await http("POST", `${ctx.host.base}/ilp/v1/events/${E1.id}/join-requests`, { body: { claim } }), "NOT_A_PEER", "claim from a non-peer");
+    await expectNoSideEffects(ctx.host, E1.id, obs, "non-peer claim");
     const after = expectOk(await http("GET", `${ctx.host.base}/ilp/v1/events/${E1.id}/join-requests`, { bearer: ctx.creds.operator.E1 }), 200, "join list").items.length;
     check(after === before, "a non-peer claim created a join request");
     return { rejected: "NOT_A_PEER" };
@@ -392,8 +400,12 @@ export const SG3_TESTS = {
     const spare = expectOk(await http("POST", `${ctx.home.base}/ilp/v1/claims`, { bearer: ctx.creds.provisioning, body: { purpose: "event_join", event: ctx.events.E2.global_id, aud: ctx.host.base, agent: ctx.subject.agent.id, on_behalf_of: ctx.subject.human } }), 201, "spare claim").claim;
     expectOk(await http("POST", `${ctx.host.base}/ilp/v1/federation/peers/${hostName}/suspend`, { bearer: ctx.creds.peering[ctx.host.name], body: {} }), 200, "host suspends home");
     try {
+      const o1 = await observe(ctx.host, E1.id);
+      const o2 = await observe(ctx.host, ctx.events.E2.id);
       expectProblem(await act(ctx.host, E1, ctx.token, proposal("while suspended")), "PEER_SUSPENDED", "act while home suspended");
       expectProblem(await http("POST", `${ctx.host.base}/ilp/v1/events/${ctx.events.E2.id}/join-requests`, { body: { claim: spare } }), "PEER_SUSPENDED", "join while home suspended");
+      await expectNoSideEffects(ctx.host, E1.id, o1, "act while home suspended");
+      await expectNoSideEffects(ctx.host, ctx.events.E2.id, o2, "join while home suspended");
       const st = expectOk(await http("GET", ctx.grantPayload.status.uri), 200, "grant status");
       check(st.status === "suspended", `grant status while suspended: ${st.status}`);
       const list = expectOk(await http("GET", `${ctx.host.base}/ilp/v1/federation/peers`), 200, "peers");

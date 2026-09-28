@@ -161,7 +161,7 @@ const PROBES = {
     expectProblem(a2, "AUTH_MISSING", "unauthenticated export, no such event");
     const op = await host.credential("operator", priv.id);
     const live = await http("POST", `${host.base}/ilp/v1/events/${priv.id}/exports`, { bearer: op, body: {} });
-    check(live.status >= 400 && !live.json?.manifest, `a live event was exported (HTTP ${live.status})`);
+    expectProblem(live, "VALIDATION_FAILED", "export of a live event (R-EV-25)");
     return { unauthenticated: "AUTH_MISSING", live: live.json?.title };
   },
   // unauthenticated grant revocation: step 1 before step 2 (SG2R3-REVOKE-PREC)
@@ -278,7 +278,7 @@ const PROBES = {
     const tok = (await retrieve(host, a)).json.participant_token;
     const claim2 = expectOk(await http("POST", `${aux.base}/ilp/v1/claims`, { bearer: auxProv, body: { purpose: "event_join", event: a.ev.global_id, aud: host.base, agent: a.syn.agent.id, on_behalf_of: a.syn.human } }), 201, "claim 2").claim;
     const r2 = await http("POST", `${host.base}/ilp/v1/events/${a.ev.id}/join-requests`, { body: { claim: claim2 } });
-    check(r2.status >= 400, "a duplicate join for an admitted principal was accepted");
+    expectProblem(r2, "CONFLICT", "a duplicate join for an admitted principal");
     expectOk(await http("POST", `${host.base}/ilp/v1/events/${a.ev.id}/actions`, { bearer: tok, body: { kind: "unconference.proposal", payload: { title: "still admitted", content: "x" } } }), 201, "original admission still acts");
     return { duplicate: r2.json?.title };
   },

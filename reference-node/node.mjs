@@ -289,6 +289,10 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
   }
 
   // ---- grants ----
+  // expiry is derived on read, never written as a side effect of a request (R-AUTHZ-11, SG2V2-EXPIRY-WRITE)
+  const effective = (g) => (g.status === "active" && nowS() - SKEW_S > g.payload.exp
+    ? { status: "expired", changed_at: iso(g.payload.exp * 1000), reason: "exp passed" }
+    : { status: g.status, changed_at: g.changed_at, reason: g.reason });
   function setGrantStatus(g, status, reason) {
     g.status = status;
     g.changed_at = iso();
@@ -404,8 +408,7 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
     if (g.status === "suspended") throw new Problem("PEER_SUSPENDED");
     const now = nowS();
     if (now + SKEW_S < g.payload.nbf || now - SKEW_S > g.payload.exp) {
-      if (g.status === "active") setGrantStatus(g, "expired", "exp passed");
-      throw new Problem("GRANT_EXPIRED");
+      throw new Problem("GRANT_EXPIRED"); // nothing is written on rejection
     }
     if (g.payload.credential_binding.value !== sha256B64u(Buffer.from(bearer, "utf8"))) throw new Problem("GRANT_BINDING_MISMATCH");
     if (t.remote) {
@@ -851,8 +854,8 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
     ["GET", "/ilp/v1/grants/:id/status", ({ params }) => {
       const g = grants.get(gid("grant", params.id));
       if (!g) throw new Problem("NOT_FOUND");
-      if (g.status === "active" && nowS() - SKEW_S > g.payload.exp) setGrantStatus(g, "expired", "exp passed");
-      return { body: { status: g.status, changed_at: g.changed_at, ...(g.reason ? { reason: g.reason } : {}) } };
+      const e = effective(g);
+      return { body: { status: e.status, changed_at: e.changed_at, ...(e.reason ? { reason: e.reason } : {}) } };
     }],
     ["GET", "/ilp/v1/auth/grant", ({ headers }) => {
       const bearer = (headers.authorization ?? "").replace(/^Bearer\s+/i, "");
@@ -861,7 +864,7 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
       if (t.revoked) throw new Problem("AUTH_REVOKED");
       const g = t.grant && grants.get(t.grant);
       if (!g) throw new Problem("AUTHZ_REQUIRED");
-      return { body: { grant: g.jws, status: g.status } };
+      return { body: { grant: g.jws, status: effective(g).status } };
     }],
     ["POST", "/ilp/v1/grants/:id/revoke", ({ headers, params, body }) => {
       requireCredential(headers, ["operator"]); // step 1 before step 2 (SG2R3-REVOKE-PREC)
@@ -886,7 +889,7 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
         "actions.jsonl": jsonl(ev.actions),
         "receipts.jsonl": jsonl(ev.receipts),
         "feed.jsonl": jsonl(ev.feed),
-        "grants.jsonl": jsonl(evGrants.map((g) => ({ jti: g.jti, jws: g.jws, status: g.status, changed_at: g.changed_at }))),
+        "grants.jsonl": jsonl(evGrants.map((g) => { const e = effective(g); return { jti: g.jti, jws: g.jws, status: e.status, changed_at: e.changed_at }; })),
         "revocations.jsonl": jsonl(revocationsOut.map((r) => ({ seq: r.seq, jws: r.jws }))),
         // SCR-8: the signed identity claim, identifiable by its jti and sub (claims carry no email)
         "claims.jsonl": jsonl([...joinRequests.values()].filter((j) => j.event === ev.id).map((j) => ({ jti: j.claim_jti, sub: j.subject, iss_host: j.home, claim: j.claim_jws, join_request: j.gid, status: j.status }))),

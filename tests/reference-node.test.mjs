@@ -66,3 +66,24 @@ test("ASTRA-R3-05: tokens, credentials and retrieval keys are held only as salte
   assert.ok(records.filter((r) => r.verifier).every((r) => /^[0-9a-f]{32}$/.test(r.verifier.salt)), "every verifier has a 128-bit salt");
   assert.ok(records.filter((r) => r.verifier).length >= 2);
 });
+
+test("SG2V2-EXPIRY-WRITE: rejecting an expired grant writes nothing; the status is derived on read", async (t) => {
+  const { call, admin } = harness();
+  const ev = (await call("POST", "/ilp/v1/admin/events", { headers: admin, body: { slug: "exp", title: "exp" } })).body;
+  const lp = (await call("POST", `/ilp/v1/admin/events/${ev.id}/local-participants`, { headers: admin })).body;
+  const auth = { authorization: `Bearer ${lp.participant_token}`, "ilp-grant": lp.grant };
+  const status = async () => (await call("GET", "/ilp/v1/auth/grant", { headers: { authorization: auth.authorization } })).body.status;
+  const feedLen = async () => (await call("GET", `/ilp/v1/events/${ev.id}/feed`, { query: { since: "0" } })).body.items.length;
+  assert.equal(await status(), "active");
+  const realNow = Date.now;
+  t.after(() => (Date.now = realNow));
+  Date.now = () => realNow() + 3600 * 1000; // past the grant's exp (+ skew), before the token's own expiry
+  const before = await feedLen();
+  const r = await call("POST", `/ilp/v1/events/${ev.id}/actions`, { headers: auth, body: { kind: "unconference.proposal", payload: { title: "late", content: "x" } } });
+  assert.equal(r.body.title, "GRANT_EXPIRED");
+  assert.equal(await feedLen(), before, "the rejected action wrote a feed record");
+  // derived on read, and still derived (not persisted) once the clock returns
+  assert.equal(await status(), "expired");
+  Date.now = realNow;
+  assert.equal(await status(), "active", "the rejection persisted an expired status");
+});
