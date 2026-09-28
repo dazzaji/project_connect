@@ -27,7 +27,7 @@ const tests = [
   // Peering (G2)
   T("PC-PEER-1", "SG-2", "pair", "blocker", "Explicit mutual peering: each admin (or peering credential) adds the other; both peer lists show the other as active with common_spec_versions non-empty", ["R-FED-3", "R-FED-4", "R-FED-15", "R-FED-16"], "active both ways"),
   T("PC-PEER-2", "SG-3", "host", "blocker", "A join request whose claim is issued by a non-peer is rejected with NOT_A_PEER, with no shadow principal created", ["R-FED-3", "R-FED-14"], "NOT_A_PEER"),
-  T("PC-PEER-3", "SG-3", "pair", "major", "Peering state changes (suspend, reinstate) are visible on the public peer list (a suspended peer is listed as suspended) and are published as signed revocation records of kind peer; the reinstatement record carries reinstated: true", ["R-FED-3", "R-FED-3a", "R-FED-4", "R-FED-10a", "R-FED-16"], "state + records"),
+  T("PC-PEER-3", "SG-3", "pair", "major", "Peering state changes (suspend, reinstate) are visible on the public peer list (a suspended peer is listed as suspended) and are published as signed revocation records of kind peer; the reinstatement record carries reinstated: true; a removed peer disappears from the public list and can be re-added. (The proposed state is not reachable through the declared interfaces in 0.0.2: an admin's peering act is its approval.)", ["R-FED-3", "R-FED-3a", "R-FED-4", "R-FED-10a", "R-FED-16"], "state + records; removed absent"),
   // Directory (G2)
   T("PC-DIR-1", "SG-3", "host", "major", "The host lists its federated event; every entry validates against directory-entry and carries the event's global ID, pack, status, policy, and home", ["R-FED-5", "R-FED-19"], "entry present and valid"),
   T("PC-DIR-2", "SG-3", "host", "blocker", "A private control event and a non-federated control event never appear in the directory, locally or aggregated", ["R-FED-19", "R-FED-17"], "absent"),
@@ -61,7 +61,7 @@ const tests = [
   T("PC-REV-1", "SG-3", "both", "blocker", "The revocation feed serves signed ilp-revocation+jwt records, valid against revocation-record, with strictly increasing seq and the {items, next_cursor, latest_seq} envelope", ["R-FED-10", "R-CORE-36"], "records verify"),
   T("PC-REV-2", "SG-3", "pair", "blocker", "The home revokes the participant's agent; within revocation_bound_s the host rejects the next act (AUTH_REVOKED or GRANT_REVOKED) and a new join by that subject is rejected with SUBJECT_REVOKED", ["R-FED-10", "R-FED-11", "R-ID-19", "R-FED-20"], "rejected within bound"),
   T("PC-REV-3", "SG-3", "host", "blocker", "The host suspends the home peer: the remote participant's next act and a new join are rejected with PEER_SUSPENDED and the grant status reads suspended; after reinstatement the ORIGINAL token and grant act again (status active) — suspension is resumable", ["R-FED-11", "R-FED-16", "R-AUTHZ-9"], "PEER_SUSPENDED then original credentials resume"),
-  T("PC-REV-4", "SG-3", "host", "blocker", "Fail closed: when the home's revocation feed cannot be refreshed for 2 × bound, a new join from that peer is rejected with REVOCATION_STATE_UNKNOWN (503, retry_after), and an already-admitted remote participant is handled per the declared remote_session_policy (pause → REVOCATION_STATE_UNKNOWN); after the home returns and a refresh succeeds, that participant acts again", ["R-FED-21"], "REVOCATION_STATE_UNKNOWN; declared policy; recovery"),
+  T("PC-REV-4", "SG-3", "host", "blocker", "Fail closed: when the home's revocation feed cannot be refreshed for 2 × bound, a new join from that peer is rejected with REVOCATION_STATE_UNKNOWN (503, retry_after), and an already-admitted remote participant is handled per the declared remote_session_policy (pause → REVOCATION_STATE_UNKNOWN); after the home returns and a refresh succeeds, that participant acts again", ["R-FED-21", "R-FED-21a", "R-CORE-29"], "REVOCATION_STATE_UNKNOWN; declared policy; recovery"),
   T("PC-REV-5", "SG-3", "host", "blocker", "Outage isolation: while the home is unreachable, the host's local event accepts a local participant's act", ["R-FED-12", "R-FED-21"], "local act accepted"),
   // Provisioning credential boundary (R-CONF-6)
   T("PC-PROV-1", "SG-3", "home", "blocker", "The ilpp_ provisioning credential cannot mint a claim for, or revoke, a non-synthetic principal (FORBIDDEN), and cannot add peers, moderate joins, revoke grants, or act in an event (rejected: FORBIDDEN or AUTH_INVALID); no state changes", ["R-CONF-6"], "rejected; no state change"),
@@ -147,7 +147,7 @@ const profile = {
   },
   no_side_effect_observables: ["action count (feed records of kind action)", "feed latest_seq", "receipt head hash", "tallies", "artifact revision"],
   negative_fixtures: [
-    { id: "NF-1", test: "PC-IDC-2", build: "an action with Authorization: Bearer <valid claim JWS>", expect: "AUTHZ_REQUIRED", step: 1 },
+    { id: "NF-1", test: "PC-IDC-2", build: "an action with Authorization: Bearer <valid claim JWS>", expect: "AUTHZ_REQUIRED", step: "1a" },
     { id: "NF-2", test: "PC-IDC-3", build: "submit the same claim twice", expect: "CLAIM_REPLAYED" },
     { id: "NF-3", test: "PC-IDC-3", build: "claim minted legitimately with aud = another host", expect: "CLAIM_AUDIENCE_MISMATCH" },
     { id: "NF-4", test: "PC-IDC-3", build: "claim signed by the runner-owned pc-aux node with exp in the past beyond skew", expect: "CLAIM_EXPIRED" },

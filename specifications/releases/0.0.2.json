@@ -6,7 +6,7 @@
   "artifacts": [
     {
       "path": "specifications/ilp_spec.md",
-      "sha256": "1c243c19731012d429324b910106b2ef674d353f898fe6d55dde687395e63f11"
+      "sha256": "05abee9c9378af3fdacc75face1fe18b9c138c0effd6b16e9fc1133b9f9ea233"
     },
     {
       "path": "specifications/schemas/attestation.schema.json",
@@ -42,7 +42,7 @@
     },
     {
       "path": "specifications/schemas/join-request.schema.json",
-      "sha256": "b806b675ec40b447cb5f7185a52d4a08daf3fed7498e6d909aa750c839f5050c"
+      "sha256": "8809b80f1d449cd55d399d701c1ed21667f0d3567d214dbda9dfc717ff2df093"
     },
     {
       "path": "specifications/schemas/peer-record.schema.json",
@@ -90,7 +90,7 @@
     },
     {
       "path": "profile/pc-0.1-s1.json",
-      "sha256": "39c998aa9f8ed0a1cb2786818a65a797156130ea6244d4d07185b35a9b7595bf"
+      "sha256": "23fff48f5155c2ac47e7770e058fade78afdbb976fdde71b831d8c85c85c34fd"
     }
   ]
 }

@@ -14,7 +14,8 @@ import { validate } from "../lib/schemas.mjs";
 import { http, PC_ROOT, seenProblems, startReferenceNode, TestFailure } from "./lib.mjs";
 import { adapter } from "./setup.mjs";
 import { SG2_ORDER, TESTS } from "./tests.mjs";
-import { SG3_ORDER, SG3_TESTS } from "./tests-sg3.mjs";
+import { LATE_ORDER, SG3_ORDER, SG3_TESTS } from "./tests-sg3.mjs";
+import { sleep } from "./lib.mjs";
 
 const args = Object.fromEntries(process.argv.slice(2).map((a, i, all) => (a.startsWith("--") ? [a.slice(2), all[i + 1]] : null)).filter(Boolean));
 const harness = args.harness ?? "http://127.0.0.1:4180";
@@ -33,6 +34,11 @@ const log = (...m) => console.error(`[runner ${new Date().toISOString().slice(11
 const refPort = (base) => Number(new URL(base).port);
 const pcRef = await startReferenceNode({ name: "pc-ref", port: refPort(profile.nodes["pc-ref"].base_url), work: out, bound: profile.parameters.revocation_bound_s });
 const pcAux = await startReferenceNode({ name: "pc-aux", port: 4194, work: out, bound: profile.parameters.revocation_bound_s });
+// the runner's own nodes never outlive it, whatever happens
+const stopOwn = () => { for (const n of [pcRef, pcAux]) { try { process.kill(-n.child.pid, "SIGCONT"); } catch {} n.stop(); } };
+process.on("exit", stopOwn);
+process.on("uncaughtException", (e) => { console.error(e); stopOwn(); process.exit(2); });
+process.on("unhandledRejection", (e) => { console.error(e); stopOwn(); process.exit(2); });
 const betaNodes = (await http("GET", `${harness}/nodes`)).json;
 const nodes = {
   "beta-one": adapter({ name: "beta-one", base: betaNodes["beta-one"].base_url, kind: "beta", adminHuman: betaNodes["beta-one"].admin_human }, { harness }),
@@ -49,6 +55,7 @@ const auxEvent = await nodes["pc-aux"].createEvent({ slug: "aux-audience-fixture
 log(`nodes: ${Object.values(nodes).map((n) => `${n.name}=${n.base}`).join(" ")}; profile ${profileHash.slice(0, 12)}`);
 
 const results = [];
+const lateCtxs = [];
 const observedKids = {};
 const activeKid = {}; // per node, run-wide (observed kids accumulate across scenarios)
 for (const sc of scenarios) {
@@ -65,8 +72,43 @@ for (const sc of scenarios) {
       identity: {}, activeKid, observedKids, deferred: [],
       observe: (node, kid) => (observedKids[node] ??= new Set()).add(kid),
     };
+    ctx.resultOf = (id) => results.find((x) => x.test_id === id && x.scenario === sc.id && x.repetition === rep)?.status;
     if (gate !== "SG-2") await SG3_TESTS.__setup(ctx);
-    for (const id of order) {
+    await runTests(ctx, SG2_ORDER);
+    if (gate !== "SG-2") {
+      // admitted as soon as peering exists, so that one wait covers every short-TTL grant in the run
+      try {
+        ctx.shortExp = await SG3_TESTS.__admitShort(ctx);
+        lateCtxs.push(ctx);
+      } catch (e) {
+        log(`short-TTL admission failed: ${e.message}`);
+      }
+      await runTests(ctx, SG3_ORDER);
+    }
+    for (const fn of ctx.deferred) {
+      try {
+        fn();
+      } catch (e) {
+        const r = results.find((x) => x.test_id === "PC-DISC-4" && x.scenario === sc.id && x.repetition === rep);
+        r.status = "fail";
+        r.failure = e.message;
+        log(`FAIL PC-DISC-4 (deferred) — ${e.message}`);
+      }
+    }
+  }
+}
+if (lateCtxs.length) {
+  const until = Math.max(...lateCtxs.map((c) => c.shortExp)) + profile.parameters.clock_skew_s + 5;
+  const waitMs = Math.max(0, until * 1000 - Date.now());
+  log(`late phase: waiting ${Math.round(waitMs / 1000)} s for short-TTL grants to pass exp + skew`);
+  await sleep(waitMs);
+  for (const ctx of lateCtxs) await runTests(ctx, LATE_ORDER);
+}
+
+async function runTests(ctx, ids) {
+  const sc = ctx.scenario;
+  const rep = ctx.rep;
+    for (const id of ids) {
       const spec = byId[id];
       if (!spec) throw new Error(`test ${id} not in profile`);
       const started = Date.now();
@@ -81,19 +123,8 @@ for (const sc of scenarios) {
       }
       r.elapsed_ms = Date.now() - started;
       results.push(r);
-      log(`${r.status === "pass" ? "PASS" : r.status === "fail" ? "FAIL" : "N/A "} ${id}${r.failure ? ` — ${r.failure}` : ""}`);
+      log(`${r.status === "pass" ? "PASS" : r.status === "fail" ? "FAIL" : "N/A "} ${sc.id}.${rep} ${id}${r.failure ? ` — ${r.failure}` : ""}`);
     }
-    for (const fn of ctx.deferred) {
-      try {
-        fn();
-      } catch (e) {
-        const r = results.find((x) => x.test_id === "PC-DISC-4" && x.scenario === sc.id && x.repetition === rep);
-        r.status = "fail";
-        r.failure = e.message;
-        log(`FAIL PC-DISC-4 (deferred) — ${e.message}`);
-      }
-    }
-  }
 }
 
 // PC-CORE-1 (SG-3): every problem document seen in the run conforms

@@ -51,5 +51,41 @@
       "type": "string",
       "maxLength": 500
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "not": {
+              "const": "approved"
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "participant_token": false,
+          "grant": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "token_delivered": {
+            "const": true
+          }
+        },
+        "required": [
+          "token_delivered"
+        ]
+      },
+      "then": {
+        "properties": {
+          "participant_token": false
+        }
+      }
+    }
+  ]
 }

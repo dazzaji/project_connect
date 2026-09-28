@@ -339,13 +339,16 @@ export const SG3_TESTS = {
     const t0 = Date.now();
     expectOk(await http("POST", `${ctx.home.base}/ilp/v1/admin/synthetic/agents/${local(v.subject.agent.id)}/revoke`, { bearer: ctx.creds.provisioning, body: { reason: "conformance" } }), 200, "home revokes agent");
     const bound = ctx.profile.parameters.revocation_bound_s;
+    // poll the public, side-effect-free grant status until the host has applied the home's record
     const res = await waitFor(async () => {
-      const r = await act(ctx.host, E1, v.token, proposal(`post-revocation ${Date.now()}`));
-      return { done: r.status >= 400, r };
+      const s = await http("GET", v.payload.status.uri);
+      return { done: s.json?.status === "revoked", s };
     }, { timeoutMs: bound * 1000 + 5000 });
     const elapsed = Date.now() - t0;
-    check(res.done, `host still accepted acts ${Math.round(elapsed / 1000)} s after the home revocation`);
-    expectProblem(res.r, ["AUTH_REVOKED", "GRANT_REVOKED"], "act after home revocation");
+    check(res.done, `host had not applied the home revocation ${Math.round(elapsed / 1000)} s later (grant status ${res.s?.json?.status})`);
+    const before = await observe(ctx.host, E1.id);
+    expectProblem(await act(ctx.host, E1, v.token, proposal("post-revocation")), ["AUTH_REVOKED", "GRANT_REVOKED"], "act after home revocation");
+    await expectNoSideEffects(ctx.host, E1.id, before, "act after home revocation");
     check(elapsed <= bound * 1000, `propagation took ${elapsed} ms > bound ${bound} s`);
     expectProblem(await http("POST", `${ctx.host.base}/ilp/v1/events/${ctx.events.E2.id}/join-requests`, { body: { claim: spare } }), "SUBJECT_REVOKED", "join by a revoked subject");
     return { propagation_ms: elapsed, bound_s: bound };
@@ -383,7 +386,13 @@ export const SG3_TESTS = {
     check(recs.some((r) => r.reinstated === true), "no reinstatement record with reinstated: true");
     const list = expectOk(await http("GET", `${ctx.host.base}/ilp/v1/federation/peers`), 200, "peers");
     check(list.items.find((p) => p.host === hostName)?.state === "active", "peer not active after reinstatement");
-    return { peer_records: recs.length };
+    // R-FED-4 negative half: a removed peer is not publicly listed (pc-aux is removed, then re-added)
+    const auxHost = hostOf(ctx.aux.base);
+    expectOk(await http("POST", `${ctx.host.base}/ilp/v1/federation/peers/${auxHost}/remove`, { bearer: ctx.creds.peering[ctx.host.name], body: {} }), 200, "host removes pc-aux");
+    const after = expectOk(await http("GET", `${ctx.host.base}/ilp/v1/federation/peers`), 200, "peers");
+    check(!after.items.some((p) => p.host === auxHost), "a removed peer is still publicly listed");
+    expectOk(await http("POST", `${ctx.host.base}/ilp/v1/federation/peers`, { bearer: ctx.creds.peering[ctx.host.name], body: { base_url: ctx.aux.base } }), [200, 201], "host re-adds pc-aux");
+    return { peer_records: recs.length, removed_absent: true };
   },
   async "PC-REV-4"(ctx) {
     // declared ops drill: the home becomes unreachable (paused, not reset) for longer than 2 × bound

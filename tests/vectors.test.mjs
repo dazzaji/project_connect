@@ -59,6 +59,11 @@ test("Receipt vectors: the good chain verifies and validates; each bad chain is 
   for (const b of bad) {
     if (b.expect === "schema_reject") {
       assert.ok(b.chain.some((r) => !validate("receipt", r).ok), b.id);
+      // RCPT-BAD-4's claim: null source_class is hashed as absent, so the chain itself still verifies
+      if (b.id === "RCPT-BAD-4") {
+        const v = verifyReceiptChain(b.chain);
+        assert.ok(v.ok && v.head === good.head, "RCPT-BAD-4 chain must still verify with the good head");
+      }
     } else {
       assert.equal(verifyReceiptChain(b.chain).ok, false, `${b.id}: ${b.note}`);
     }

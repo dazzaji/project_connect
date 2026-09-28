@@ -267,9 +267,9 @@ Specifications and conformance tests evolve together. Every artifact that can ch
 
 ### 1.7 Changelog for 0.0.2
 
-- **Schemas under version control (OI-1, OI-2 resolved).** `specifications/schemas/` holds 15 strict JSON Schemas (Draft 2020-12): the updated `discovery` v2, `identity-claim` v2, `receipt` v2, `export-manifest` v2, `problem` v2, and the new `authorization-grant`, `grant-status`, `revocation-record`, `revocation-feed`, `peer-record`, `directory-entry`, `join-request`, `attestation`, `test-result`, `evidence-packet-manifest`. All permit `x_` members (R-CORE-39(c)).
+- **Schemas under version control (OI-1, OI-2 resolved).** `specifications/schemas/` holds 15 strict JSON Schemas (Draft 2020-12): the updated `discovery` v2, `identity-claim` v2, `receipt` v2, `export-manifest` v2, `problem` v2, and the new `authorization-grant`, `grant-status`, `revocation-record`, `revocation-feed`, `peer-record`, `directory-entry`, `join-request`, `attestation`, `test-result`, `evidence-packet-manifest`. All permit `x_` members (R-CORE-39(c)) except `identity-claim` and `receipt`, which are closed.
 - **Test vectors published (OI-8, format and location).** `vectors/`: canonicalization, JWS (good and bad for claims, grants, revocation records, attestations), receipt chains (including the `resource` wire form, K-21), and detached signatures. They regenerate deterministically from published test seeds (`tools/gen-vectors.mjs`).
-- **Candidate profile.** `profile/pc-0.1-s1.json` (candidate; 43 tests), with its scenario matrix, parameters, exclusions, actor and credential table, declared interfaces, and negative-fixture catalogue.
+- **Candidate profile.** `profile/pc-0.1-s1.json` (candidate; 47 tests), with its scenario matrix, parameters, exclusions, actor and credential table, declared interfaces, and negative-fixture catalogue.
 - **Spec Change Requests accepted:**
   - **SCR-1** — Synthetic-principal provisioning credential (R-CONF-6).
   - **SCR-2** — Presented grants, the `ILP-Grant` request header, and precedence step 4a (R-AUTHZ-15); identity presented as authority (R-AUTHZ-16); event scoping of tokens under grants (R-AUTHZ-17).
@@ -512,11 +512,11 @@ All other modules inherit these conventions.
   |---|---|---|
   | 0 | Syntactic request validity: JSON parse, envelope shape, size | `VALIDATION_FAILED`, `PAYLOAD_TOO_LARGE` |
   | 1 | Credential presence and validity | `AUTH_MISSING`, `AUTH_INVALID`, `AUTH_EXPIRED`, `AUTH_REVOKED`, `CSRF_FAILED` |
-| 1a | *[NEW 0.0.2]* The bearer is a verifying identity claim (R-AUTHZ-16) — reported instead of `AUTH_INVALID` | `AUTHZ_REQUIRED` |
+  | 1a | *[NEW 0.0.2]* The bearer is a verifying identity claim (R-AUTHZ-16) — reported instead of `AUTH_INVALID` | `AUTHZ_REQUIRED` |
   | 2 | Resource existence and visibility | `NOT_FOUND` |
   | 3 | Registration or admission state | `FORBIDDEN` + `code_detail: PENDING_APPROVAL` |
   | 4a | *[NEW 0.0.2, SCR-2]* Authenticity of a **presented** grant (R-AUTHZ-15): issuer and audience are this host, then signature | `GRANT_AUDIENCE_MISMATCH`, `SIGNATURE_INVALID`, `UNKNOWN_SIGNER` |
-| 4 | Grant status, validity window, credential binding (§7) | `GRANT_REVOKED`, `GRANT_EXPIRED`, `GRANT_BINDING_MISMATCH`, `PEER_SUSPENDED` |
+  | 4 | Grant status, validity window, credential binding (§7); for a remote principal, the home peer's state and revocation freshness (R-FED-21a) | `GRANT_REVOKED`, `GRANT_EXPIRED`, `GRANT_BINDING_MISMATCH`, `PEER_SUSPENDED`, `REVOCATION_STATE_UNKNOWN` |
   | 5 | Grant event and audience | `GRANT_EVENT_MISMATCH`, `GRANT_AUDIENCE_MISMATCH` |
   | 6 | Grant scope and exclusions | `GRANT_SCOPE_VIOLATION` |
   | 7 | Event status and phase, including the grace window | `PHASE_MISMATCH`; `code_detail` `EVENT_NOT_LIVE`, `ACTION_PHASE_FORBIDDEN`, `EXPECT_PHASE_STALE` |
@@ -1328,7 +1328,7 @@ The steps:
 
    B then creates or reuses a **shadow principal** for M (origin global ID, marked `remote`, **no email**) and a `pending` registration.
 5. **Admit.** B's operator approves or rejects through the normal moderation API. Approval activates membership and issues **both** a participant token bound to the shadow principal (and agent) **and an authorization grant** (R-AUTHZ-2).
-6. **Deliver.** M retrieves the status, token, and grant with `GET https://B/ilp/v1/events/{E}/join-requests/{id}`, authenticated by the retrieval key. B MAY notify A (`POST https://A/ilp/v1/federation/notify`, signed, best-effort). Polling remains the guaranteed path.
+6. **Deliver.** M retrieves the status, token, and grant with `GET https://B/ilp/v1/events/{E}/join-requests/{id}`, authenticated by the retrieval key. *[0.0.2, SCR-7]* B MAY mint and deliver the token only once, at the first authenticated retrieval after approval; later retrievals then carry the grant and `token_delivered: true`, never the token. B MAY notify A (`POST https://A/ilp/v1/federation/notify`, signed, best-effort). Polling remains the guaranteed path.
 7. **Participate.** M and M's agent use B's ILP-EVENT API exactly as a local participant would, and every governed action is evaluated against the grant (§7).
 
 - **R-FED-7** — Steps 3–6 are the normative join protocol. Every state change emits feed records and receipts on B. Claim minting is audited on A.
@@ -1665,7 +1665,7 @@ A profile names:
 | Parameters | `revocation_bound_s = 60`; skew ±300 s; claim TTL ≤ 86400 s; test-grant TTL ≤ 600 s |
 | Excluded | RFC 9421 request signing (pending OI-3); local login; collaboration artifacts; parliamentary and meeting packs; the three-node topology |
 | Gates | The acceptance profile's G0 (reproducible identity), G1 (independent conformance), G2 (governed peering and discovery), G3 (remote identity and signed authorization), G4 (authorized participation and receipts), G5 (enforcement and negative cases), G6 (revocation and failure isolation), G7 (bidirectional proof), G8 (offline evidence verification) |
-| Test families | `PC-DISC`, `PC-CORE`, `PC-PEER`, `PC-DIR`, `PC-IDC`, `PC-GRANT`, `PC-RCPT`, `PC-ENF`, `PC-REV`, `PC-INTEROP`, `PC-EXP`, `PC-VER` (Appendix B.2) |
+| Test families | `PC-DISC`, `PC-CORE`, `PC-PEER`, `PC-DIR`, `PC-IDC`, `PC-GRANT`, `PC-RCPT`, `PC-ENF`, `PC-REV`, `PC-PROV`, `PC-INTEROP`, `PC-EXP`, `PC-VER` (Appendix B.2; the candidate profile file is authoritative) |
 
 ### 15.5 Findings
 
@@ -2069,19 +2069,20 @@ Measured on 2026-09-27 against the reference implementation (`misc/evidence/…/
 
 ### B.2 Project Connect slice-1 tests (`PC-`, [DRAFT])
 
-These are planned for profile `pc-0.1-s1`, and their final text freezes at 0.1.0.
+These are the families of profile `pc-0.1-s1`; the candidate profile file (`profile/pc-0.1-s1.json`, 47 tests) is authoritative, and the final text freezes at 0.1.0.
 
 | Family | IDs | Asserts |
 |---|---|---|
-| PC-DISC | 1–4 | Discovery validates strictly; `spec_versions` and profile present; build identity is real; keys are well-formed; every endpoint resolves |
+| PC-DISC | 1–5 | Discovery validates strictly; `spec_versions` and profile present; build identity is real; keys are well-formed; every endpoint resolves |
 | PC-CORE | 1–5 | Vectors verify; problem shape and registered codes; unknown members ignored; `PROTOCOL_UNSUPPORTED`; ±300 s skew |
 | PC-PEER | 1–3 | Mutual approval → `active`, listed; non-peer → `NOT_A_PEER`; suspend and remove audited and receipted |
 | PC-DIR | 1–4 | Required fields; aggregation labeled by home; private events never cross; outage degrades gracefully; status propagates |
 | PC-IDC | 1–3 | Claim validity; join → `202` with a shadow principal and no email; identity alone → `AUTHZ_REQUIRED` |
 | PC-GRANT | 1–3 | A signed grant on approval, verifiable and bound to the credential; retrieval-key discipline; public status endpoint with no secrets |
 | PC-RCPT | 1–3 | A permitted act is accepted once; the receipt carries `authorization_grant` and the chain holds; idempotency; feed and export agree |
-| PC-ENF | 1–9 | Each negative case yields the expected code **and** no side effects: no grant, out of scope, wrong event or audience, expired, replayed, tampered, revoked, unknown signer, unsupported version |
+| PC-ENF | 1–11 | Each negative case yields the expected code **and** no side effects: no grant, out of scope, wrong event or audience, expired, replayed, tampered, revoked, unknown signer, unsupported version |
 | PC-REV | 1–5 | Host-side grant revocation; home-side agent revocation within bound B; peer suspend and reinstate; stale feed → fail closed; local events isolated from the outage |
+| PC-PROV | 1 | The synthetic-principal provisioning credential cannot act beyond its scope (R-CONF-6) |
 | PC-INTEROP | AB, BA | G3–G6 with roles swapped |
 | PC-EXP | 1–2 | Export with grants and revocations verifies offline; any tampered byte fails |
 | PC-VER | 1–2 | Packet complete, signed, deterministic, and secret-free; attestations over the packet root |

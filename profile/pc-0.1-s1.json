@@ -153,7 +153,7 @@
       "test": "PC-IDC-2",
       "build": "an action with Authorization: Bearer <valid claim JWS>",
       "expect": "AUTHZ_REQUIRED",
-      "step": 1
+      "step": "1a"
     },
     {
       "id": "NF-2",
@@ -484,7 +484,7 @@
       "gate": "SG-3",
       "role": "pair",
       "severity": "major",
-      "title": "Peering state changes (suspend, reinstate) are visible on the public peer list (a suspended peer is listed as suspended) and are published as signed revocation records of kind peer; the reinstatement record carries reinstated: true",
+      "title": "Peering state changes (suspend, reinstate) are visible on the public peer list (a suspended peer is listed as suspended) and are published as signed revocation records of kind peer; the reinstatement record carries reinstated: true; a removed peer disappears from the public list and can be re-added. (The proposed state is not reachable through the declared interfaces in 0.0.2: an admin's peering act is its approval.)",
       "traces": [
         "R-FED-3",
         "R-FED-3a",
@@ -492,7 +492,7 @@
         "R-FED-10a",
         "R-FED-16"
       ],
-      "expect": "state + records",
+      "expect": "state + records; removed absent",
       "since": "0.0.2",
       "verification": "black-box"
     },
@@ -896,7 +896,9 @@
       "severity": "blocker",
       "title": "Fail closed: when the home's revocation feed cannot be refreshed for 2 × bound, a new join from that peer is rejected with REVOCATION_STATE_UNKNOWN (503, retry_after), and an already-admitted remote participant is handled per the declared remote_session_policy (pause → REVOCATION_STATE_UNKNOWN); after the home returns and a refresh succeeds, that participant acts again",
       "traces": [
-        "R-FED-21"
+        "R-FED-21",
+        "R-FED-21a",
+        "R-CORE-29"
       ],
       "expect": "REVOCATION_STATE_UNKNOWN; declared policy; recovery",
       "since": "0.0.2",

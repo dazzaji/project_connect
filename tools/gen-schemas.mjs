@@ -284,6 +284,13 @@ const schemas = {
       grant: { ...jwsCompact, $comment: "the ilp-grant+jwt; present only when approved" },
       token_delivered: { type: "boolean", $comment: "true when the token was already delivered by an earlier retrieval (SCR-7)" },
       reason: { type: "string", maxLength: 500 },
+    }, {
+      allOf: [
+        // credentials only on an approved request
+        { if: { properties: { status: { not: { const: "approved" } } } }, then: { properties: { participant_token: false, grant: false } } },
+        // a token is never re-delivered (SCR-7)
+        { if: { properties: { token_delivered: { const: true } }, required: ["token_delivered"] }, then: { properties: { participant_token: false } } },
+      ],
     }),
   ),
 

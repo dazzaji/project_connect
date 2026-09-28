@@ -77,7 +77,12 @@ export async function startReferenceNode({ name, port, work, bound = 60 }) {
     } catch {}
     await new Promise((r) => setTimeout(r, 100));
   }
-  const kf = JSON.parse(readFileSync(join(dir, "key.json"), "utf8"));
+  let kf;
+  try {
+    kf = JSON.parse(readFileSync(join(dir, "key.json"), "utf8"));
+  } catch {
+    throw new Error(`reference node ${name} did not start on port ${port} (port in use?) — see ${join(dir, "node.log")}`);
+  }
   const key = kf.keys.find((k) => k.kid === kf.active_kid);
   return { name, base, kind: "ref", admin, key, child, stop: () => { try { process.kill(-child.pid, "SIGTERM"); } catch {} } };
 }
