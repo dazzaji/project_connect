@@ -60,7 +60,9 @@
     },
     {
       "what": "three-node trio topology",
-      "why": "pc-*-trio"
+      "requirement": "R-FED-18",
+      "why": "R-FED-18 moved the topology from wire behavior to a conformance profile (§15.6); slice 1 uses the pairwise minimum; the trio is profile pc-*-trio",
+      "verification": "review"
     }
   ],
   "scenarios": [
@@ -397,10 +399,11 @@
       "gate": "SG-3",
       "role": "host",
       "severity": "major",
-      "title": "Lenient receive: a claim carrying an unknown x_ member (signed) is accepted; a claim carrying a non-x_ unknown member is accepted and the member ignored",
+      "title": "Lenient receive: a claim carrying an unknown x_ member (signed) is accepted; a claim carrying a non-x_ unknown member is accepted and the member ignored (federation input is schema-validated, never interpreted)",
       "traces": [
         "R-CORE-39",
-        "R-FED-15"
+        "R-FED-15",
+        "R-FED-13"
       ],
       "expect": "202 pending for both",
       "since": "0.0.2",
@@ -414,7 +417,8 @@
       "title": "JWS discipline: a claim with alg none, or alg other than EdDSA, is rejected with SIGNATURE_INVALID; a claim whose kid does not resolve is rejected with UNKNOWN_SIGNER",
       "traces": [
         "R-CORE-36",
-        "R-FED-14"
+        "R-FED-14",
+        "R-FED-13"
       ],
       "expect": "SIGNATURE_INVALID; UNKNOWN_SIGNER",
       "since": "0.0.2",
@@ -610,9 +614,10 @@
         "R-AUTHZ-3",
         "R-AUTHZ-4",
         "R-AUTHZ-5",
-        "R-AUTHZ-6"
+        "R-AUTHZ-6",
+        "R-AUTHZ-14"
       ],
-      "expect": "valid grant bound to the delivered token",
+      "expect": "valid grant bound to the delivered token; parent_grant null",
       "since": "0.0.2",
       "verification": "black-box"
     },
@@ -962,7 +967,7 @@
       "gate": "SG-4",
       "role": "host",
       "severity": "major",
-      "title": "The host's ilp-export/1 bundle validates, is signed by the active kid, and additively includes grants.jsonl, revocations.jsonl, and claims.jsonl (consent-filtered, no email)",
+      "title": "The host's ilp-export/1 bundle validates, is signed by the active kid, and additively includes grants.jsonl, revocations.jsonl, and claims.jsonl — each claims entry carrying the signed identity-claim JWS, identifiable by its jti and sub, consent-filtered, no email (SCR-8)",
       "traces": [
         "R-EV-25",
         "R-FED-9",

@@ -17,6 +17,7 @@
     "files",
     "receipts_head_hash",
     "consent_versions",
+    "remote_origins",
     "kid",
     "signature"
   ],

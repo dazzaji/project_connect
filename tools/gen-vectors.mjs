@@ -252,6 +252,7 @@ const manifest = signDetached(
     files: [{ path: "receipts.jsonl", sha256: "b".repeat(64), bytes: 1234 }],
     receipts_head_hash: good_chain.at(-1).hash,
     consent_versions: [],
+    remote_origins: ["home.example"],
   },
   HOST,
 );

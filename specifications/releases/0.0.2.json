@@ -6,7 +6,7 @@
   "artifacts": [
     {
       "path": "specifications/ilp_spec.md",
-      "sha256": "1a81c0bd72b8a9e8ae43cb85c85a4d57a60e705c9151269ab7ef9786365f6b2b"
+      "sha256": "37845c808701104a6b6ea6c5d34ae2a042d7539de824ebd45a7c46366f51f851"
     },
     {
       "path": "specifications/schemas/attestation.schema.json",
@@ -30,7 +30,7 @@
     },
     {
       "path": "specifications/schemas/export-manifest.schema.json",
-      "sha256": "c8816931095006a2ee123c4e3b7296e8902c64b91824fecda4f61f9f21c3957a"
+      "sha256": "317f19614c86e3dde878df60312a13ce51214ed3ad56dfe8a43befcafe5c2bbb"
     },
     {
       "path": "specifications/schemas/grant-status.schema.json",
@@ -74,7 +74,7 @@
     },
     {
       "path": "vectors/detached.json",
-      "sha256": "166edc3e710d1862508a5f8bf6a2bd785cac6391b9838d1620cd27afdb49f53b"
+      "sha256": "25a10e7e249724236fd269c466a63f9015739852c4c3dd839eac05b02287e1c7"
     },
     {
       "path": "vectors/jcs.json",
@@ -90,7 +90,7 @@
     },
     {
       "path": "profile/pc-0.1-s1.json",
-      "sha256": "7d810c762ffaf0d040061a90246ffe2752755a22394e4bcfaa897db619b7e85a"
+      "sha256": "2c8e5ed0cff3b83cafe0bd79d5d4e201559aa7594579bf5062b5d5efb69197e8"
     }
   ]
 }

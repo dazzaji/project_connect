@@ -20,8 +20,8 @@ const tests = [
   T("PC-DISC-5", "SG-3", "both", "major", "Key custody ops drill: started in production mode with its key file absent, the node refuses to start; started in declared development mode with a key file present, the node does not replace it", ["R-CORE-34"], "refusal; key unchanged", { verification: "ops-drill" }),
   // Core conventions
   T("PC-CORE-1", "SG-3", "both", "major", "Problem documents: type = urn:ilp:error:<CODE>, title = <CODE>, status = HTTP status, served as application/problem+json", ["R-CORE-9", "R-CORE-9a", "R-CORE-11"], "every negative response in the run conforms"),
-  T("PC-CORE-2", "SG-3", "host", "major", "Lenient receive: a claim carrying an unknown x_ member (signed) is accepted; a claim carrying a non-x_ unknown member is accepted and the member ignored", ["R-CORE-39", "R-FED-15"], "202 pending for both"),
-  T("PC-CORE-3", "SG-3", "host", "blocker", "JWS discipline: a claim with alg none, or alg other than EdDSA, is rejected with SIGNATURE_INVALID; a claim whose kid does not resolve is rejected with UNKNOWN_SIGNER", ["R-CORE-36", "R-FED-14"], "SIGNATURE_INVALID; UNKNOWN_SIGNER"),
+  T("PC-CORE-2", "SG-3", "host", "major", "Lenient receive: a claim carrying an unknown x_ member (signed) is accepted; a claim carrying a non-x_ unknown member is accepted and the member ignored (federation input is schema-validated, never interpreted)", ["R-CORE-39", "R-FED-15", "R-FED-13"], "202 pending for both"),
+  T("PC-CORE-3", "SG-3", "host", "blocker", "JWS discipline: a claim with alg none, or alg other than EdDSA, is rejected with SIGNATURE_INVALID; a claim whose kid does not resolve is rejected with UNKNOWN_SIGNER", ["R-CORE-36", "R-FED-14", "R-FED-13"], "SIGNATURE_INVALID; UNKNOWN_SIGNER"),
   T("PC-CORE-4", "SG-3", "host", "blocker", "Error precedence: an out-of-scope action attempted in a phase that forbids it reports GRANT_SCOPE_VIOLATION, not PHASE_MISMATCH", ["R-CORE-29", "R-AUTHZ-7"], "GRANT_SCOPE_VIOLATION"),
   T("PC-CORE-5", "SG-3", "host", "blocker", "Receipt wire form: served receipts use member `resource` (never resource_global_id), validate against the receipt schema, and the chain recomputes from sixty-four zeros", ["R-CORE-24", "R-CORE-40", "R-CORE-35"], "chain verifies with the reference library"),
   // Peering (G2)
@@ -38,7 +38,7 @@ const tests = [
   T("PC-IDC-2", "SG-2", "host", "blocker", "The host accepts a valid claim (202 pending, retrieval key) and creates a remote shadow principal keyed by the home global ID; identity alone confers nothing: an action authenticated only by the claim returns AUTHZ_REQUIRED", ["R-FED-7", "R-FED-8", "R-AUTHZ-1", "R-AUTHZ-16", "R-ID-18"], "202; AUTHZ_REQUIRED; no side effects"),
   T("PC-IDC-3", "SG-2", "host", "blocker", "Claim validation: a replayed claim is rejected with CLAIM_REPLAYED; a claim for another audience with CLAIM_AUDIENCE_MISMATCH; an expired claim with CLAIM_EXPIRED; a tampered claim with SIGNATURE_INVALID", ["R-FED-14", "R-ID-18", "R-CORE-38"], "each code"),
   // Grants (G3)
-  T("PC-GRANT-1", "SG-2", "host", "blocker", "After approval, the authenticated join retrieval delivers the participant token and an ilp-grant+jwt: typ, EdDSA, active kid; payload valid; iss = aud = host; sub = home global ID; agent bound; authorization_details names unconference@1.1 unconference.proposal; exp − iat ≤ test-grant TTL; credential_binding = S256(token)", ["R-AUTHZ-2", "R-AUTHZ-3", "R-AUTHZ-4", "R-AUTHZ-5", "R-AUTHZ-6"], "valid grant bound to the delivered token"),
+  T("PC-GRANT-1", "SG-2", "host", "blocker", "After approval, the authenticated join retrieval delivers the participant token and an ilp-grant+jwt: typ, EdDSA, active kid; payload valid; iss = aud = host; sub = home global ID; agent bound; authorization_details names unconference@1.1 unconference.proposal; exp − iat ≤ test-grant TTL; credential_binding = S256(token)", ["R-AUTHZ-2", "R-AUTHZ-3", "R-AUTHZ-4", "R-AUTHZ-5", "R-AUTHZ-6", "R-AUTHZ-14"], "valid grant bound to the delivered token; parent_grant null"),
   T("PC-GRANT-2", "SG-2", "host", "major", "Grant status is public and secret-free (active), and the bearer can re-fetch the same grant at /ilp/v1/auth/grant", ["R-AUTHZ-9"], "active; same JWS"),
   T("PC-GRANT-3", "SG-3", "host", "blocker", "A grant used after exp (plus skew) is rejected with GRANT_EXPIRED and status reports expired", ["R-AUTHZ-5", "R-CORE-38"], "GRANT_EXPIRED"),
   // Receipts (G4)
@@ -69,7 +69,7 @@ const tests = [
   T("PC-INTEROP-AB", "SG-3", "pair", "blocker", "Golden thread with Beta-A as home and Beta-B as host passes end to end (PEER-1, IDC-1..3, GRANT-1..2, ENF-1..2, RCPT-1)", ["R-CONF-2"], "all pass in SC-1"),
   T("PC-INTEROP-BA", "SG-3", "pair", "blocker", "Golden thread with Beta-B as home and Beta-A as host passes end to end", ["R-CONF-2"], "all pass in SC-2"),
   // Export and verification (G8)
-  T("PC-EXP-1", "SG-4", "host", "major", "The host's ilp-export/1 bundle validates, is signed by the active kid, and additively includes grants.jsonl, revocations.jsonl, and claims.jsonl (consent-filtered, no email)", ["R-EV-25", "R-FED-9", "R-CORE-36"], "bundle verifies"),
+  T("PC-EXP-1", "SG-4", "host", "major", "The host's ilp-export/1 bundle validates, is signed by the active kid, and additively includes grants.jsonl, revocations.jsonl, and claims.jsonl — each claims entry carrying the signed identity-claim JWS, identifiable by its jti and sub, consent-filtered, no email (SCR-8)", ["R-EV-25", "R-FED-9", "R-CORE-36"], "bundle verifies"),
   T("PC-VER-1", "SG-4", "pair", "blocker", "pc-verify accepts the complete packet offline with network denied, and rejects each negative packet for the stated reason", ["R-CORE-37", "R-CONF-1"], "exit 0; negatives non-zero"),
 ];
 
@@ -100,7 +100,7 @@ const profile = {
     { what: "local login (§6.2)", why: "Identity-Home profile" },
     { what: "collaboration artifacts (§9)", why: "out of slice" },
     { what: "parliamentary and meeting packs", why: "out of slice" },
-    { what: "three-node trio topology", why: "pc-*-trio" },
+    { what: "three-node trio topology", requirement: "R-FED-18", why: "R-FED-18 moved the topology from wire behavior to a conformance profile (§15.6); slice 1 uses the pairwise minimum; the trio is profile pc-*-trio", verification: "review" },
   ],
   scenarios: [
     { id: "SC-1", home: "beta-one", host: "beta-two", repetitions: 2, fresh_events: true },

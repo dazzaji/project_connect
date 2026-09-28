@@ -320,7 +320,7 @@ const schemas = {
   "export-manifest": schema(
     { id: "export-manifest", gen: 2 },
     "ILP export bundle manifest (ilp-export/1, R-EV-25, §14.1)",
-    obj(["format", "event", "created_at", "created_by", "instance", "files", "receipts_head_hash", "consent_versions", "kid", "signature"], {
+    obj(["format", "event", "created_at", "created_by", "instance", "files", "receipts_head_hash", "consent_versions", "remote_origins", "kid", "signature"], {
       format: { const: "ilp-export/1" },
       event: gid("event"),
       created_at: dateTime,

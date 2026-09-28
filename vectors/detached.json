@@ -48,8 +48,11 @@
       ],
       "receipts_head_hash": "409717ef3ac428f4ff2fe6d159a9c32ce3ae132a30f30f5907ecaca6c5b58dbd",
       "consent_versions": [],
+      "remote_origins": [
+        "home.example"
+      ],
       "kid": "vec-host-1",
-      "signature": "-UGNWpru6NCFvb7nNTHihg9tXkxGM8oUQznGg7-6JcM1tRIC0momvaNzpzMZMSWp055DhKZc0oQAp-DdFlsMBg"
+      "signature": "OeqA2KwvxUqFRsUDksxoNs0eBG7TnqOfqZiyzLBfVu5Y_DBkw8nTscgCFG62dwtDKmhU1ZrIh57Iy6_Vxf07Cg"
     },
     "signer": "https://host.example"
   },
@@ -74,8 +77,11 @@
         ],
         "receipts_head_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
         "consent_versions": [],
+        "remote_origins": [
+          "home.example"
+        ],
         "kid": "vec-host-1",
-        "signature": "-UGNWpru6NCFvb7nNTHihg9tXkxGM8oUQznGg7-6JcM1tRIC0momvaNzpzMZMSWp055DhKZc0oQAp-DdFlsMBg"
+        "signature": "OeqA2KwvxUqFRsUDksxoNs0eBG7TnqOfqZiyzLBfVu5Y_DBkw8nTscgCFG62dwtDKmhU1ZrIh57Iy6_Vxf07Cg"
       },
       "signer": "https://host.example",
       "expect": "SIGNATURE_INVALID",
@@ -101,8 +107,11 @@
         ],
         "receipts_head_hash": "409717ef3ac428f4ff2fe6d159a9c32ce3ae132a30f30f5907ecaca6c5b58dbd",
         "consent_versions": [],
+        "remote_origins": [
+          "home.example"
+        ],
         "kid": "vec-other-1",
-        "signature": "-UGNWpru6NCFvb7nNTHihg9tXkxGM8oUQznGg7-6JcM1tRIC0momvaNzpzMZMSWp055DhKZc0oQAp-DdFlsMBg"
+        "signature": "OeqA2KwvxUqFRsUDksxoNs0eBG7TnqOfqZiyzLBfVu5Y_DBkw8nTscgCFG62dwtDKmhU1ZrIh57Iy6_Vxf07Cg"
       },
       "signer": "https://host.example",
       "expect": "UNKNOWN_SIGNER",
