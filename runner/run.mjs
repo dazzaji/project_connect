@@ -16,6 +16,8 @@ import { adapter } from "./setup.mjs";
 import { SG2_ORDER, TESTS } from "./tests.mjs";
 import { LATE_ORDER, SG3_ORDER, SG3_TESTS } from "./tests-sg3.mjs";
 import { sleep } from "./lib.mjs";
+import { assemblePacket, checkExport, exportHostEvent, negativeCases, verifyPacket } from "./sg4.mjs";
+import { execFileSync } from "node:child_process";
 
 const args = Object.fromEntries(process.argv.slice(2).map((a, i, all) => (a.startsWith("--") ? [a.slice(2), all[i + 1]] : null)).filter(Boolean));
 const harness = args.harness ?? "http://127.0.0.1:4180";
@@ -127,6 +129,53 @@ async function runTests(ctx, ids) {
     }
 }
 
+// ---------------- SG-4: exports, packet, verification ----------------
+const postPacket = [];
+let packetInfo = null;
+if (gate === "all" && lateCtxs.length) {
+  const bundles = [];
+  for (const ctx of lateCtxs) {
+    const started = Date.now();
+    const r = { test_id: "PC-EXP-1", scenario: ctx.scenario.id, repetition: ctx.rep, status: "pass", traces: byId["PC-EXP-1"].traces, started_at: new Date(started).toISOString(), elapsed_ms: 0, observations: {} };
+    try {
+      const b = await exportHostEvent(ctx);
+      r.observations = await checkExport(ctx, b);
+      bundles.push(b);
+    } catch (e) {
+      r.status = "fail";
+      r.failure = e.message;
+    }
+    r.elapsed_ms = Date.now() - started;
+    results.push(r);
+    log(`${r.status === "pass" ? "PASS" : "FAIL"} ${ctx.scenario.id}.${ctx.rep} PC-EXP-1${r.failure ? ` — ${r.failure}` : ""}`);
+  }
+  const subjectNodes = ["beta-one", "beta-two", "pc-ref"].map((k) => nodes[k]);
+  const subjects = [];
+  for (const n of subjectNodes) subjects.push({ label: n.name, base_url: n.base, discovery: (await http("GET", `${n.base}/.well-known/interlateral.json`)).json, revocations: (await http("GET", `${n.base}/ilp/v1/federation/revocations?since=0`)).json });
+  const runnerBuild = (() => { try { return `git:${execFileSync("git", ["-C", PC_ROOT, "rev-parse", "--short=12", "HEAD"]).toString().trim()}`; } catch { return "unknown"; } })();
+  const attest = async (label, contentRoot) => {
+    const n = nodes[label];
+    const r = n.kind === "ref"
+      ? await http("POST", `${n.base}/ilp/v1/admin/attestations`, { bearer: n.admin, body: { content_root: contentRoot, profile: profile.id } })
+      : await http("POST", `${harness}/setup/attest`, { body: { node: label, content_root: contentRoot, profile: profile.id } });
+    if (!r.json?.attestation) throw new Error(`attestation by ${label} failed: ${r.text.slice(0, 200)}`);
+    return r.json.attestation;
+  };
+  for (const r of results) if (!validate("test-result", r).ok) throw new Error(`invalid result ${r.test_id}`);
+  packetInfo = await assemblePacket({ dir: join(out, "packet"), runId: `pcs1-${Date.now().toString(36)}`, profile, profileRaw: readFileSync(join(PC_ROOT, "profile", "pc-0.1-s1.json"), "utf8"), results, subjects, exports: bundles, runnerBuild, attest });
+  writeFileSync(join(out, "trust.json"), JSON.stringify(packetInfo.trust, null, 2) + "\n");
+  const report = verifyPacket(packetInfo.dir, packetInfo.trust);
+  writeFileSync(join(out, "verifier-report.json"), JSON.stringify(report, null, 2) + "\n");
+  const negatives = negativeCases(packetInfo.dir, packetInfo.trust);
+  writeFileSync(join(out, "negative-verification.json"), JSON.stringify(negatives, null, 2) + "\n");
+  const verOk = report.ok && negatives.every((n) => n.rejected && n.right_reason);
+  log(`packet ${packetInfo.contentRoot.slice(0, 16)}… verify: ${report.ok ? "PASS" : "FAIL"}; negatives rejected for the right reason: ${negatives.filter((n) => n.rejected && n.right_reason).length}/${negatives.length}`);
+  for (const c of report.checks.filter((c) => !c.ok)) log(`  verifier: ${c.id}: ${c.detail}`);
+  for (const n of negatives.filter((n) => !(n.rejected && n.right_reason))) log(`  negative not rejected correctly: ${n.id} (failed: ${n.failed_checks.join(",")})`);
+  for (const sc of scenarios) for (let rp = 1; rp <= reps; rp++) postPacket.push({ test_id: "PC-VER-1", scenario: sc.id, repetition: rp, status: verOk ? "pass" : "fail", traces: byId["PC-VER-1"].traces, started_at: new Date().toISOString(), elapsed_ms: 0, observations: { content_root: packetInfo.contentRoot, negatives: negatives.length }, ...(verOk ? {} : { failure: "packet verification or a negative case failed; see verifier-report.json / negative-verification.json" }) });
+  writeFileSync(join(out, "post-packet-results.jsonl"), postPacket.map((r) => JSON.stringify(r)).join("\n") + "\n");
+}
+
 // PC-CORE-1 (SG-3): every problem document seen in the run conforms
 for (const r of results) {
   const v = validate("test-result", r);
@@ -141,7 +190,7 @@ for (const r of results) (summary[r.test_id] ??= {})[`${r.scenario}.${r.repetiti
 const cols = [...new Set(results.map((r) => `${r.scenario}.${r.repetition}`))];
 console.log(["test".padEnd(16), ...cols.map((c) => c.padEnd(8))].join(" "));
 for (const [id, row] of Object.entries(summary)) console.log([id.padEnd(16), ...cols.map((c) => (row[c] ?? "-").padEnd(8))].join(" "));
-const failed = results.filter((r) => r.status === "fail").length;
+const failed = results.filter((r) => r.status === "fail").length + postPacket.filter((r) => r.status === "fail").length;
 console.log(`\n${results.length} results, ${results.filter((r) => r.status === "pass").length} pass, ${failed} fail, ${results.filter((r) => r.status === "not_applicable").length} n/a — ${out}`);
 pcRef.stop();
 pcAux.stop();

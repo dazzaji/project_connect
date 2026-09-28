@@ -417,6 +417,13 @@ export function createNode({ baseUrl, name, key, build, deploymentId, adminToken
       return { status: 201, body: { human, participant_token: t.token, grant: g.jws } };
     }],
 
+    ["POST", "/ilp/v1/admin/attestations", ({ headers, body }) => {
+      requireAdmin(headers);
+      if (typeof body.content_root !== "string" || !/^[0-9a-f]{64}$/.test(body.content_root)) throw new Problem("VALIDATION_FAILED", "content_root must be 64 lowercase hex");
+      const payload = { iss: baseUrl, jti: `attestation-${randomUUID()}`, iat: nowS(), role: "node", content_root: body.content_root, profile: String(body.profile ?? ""), build, ...(body.statement ? { statement: String(body.statement).slice(0, 2000) } : {}) };
+      return { status: 201, body: { attestation: signJws(payload, key, TYP.attestation) } };
+    }],
+
     // synthetic principals (SCR-1, R-CONF-6)
     ["POST", "/ilp/v1/admin/synthetic/humans", ({ headers, body }) => {
       requireCredential(headers, ["provisioning"]);
