@@ -290,6 +290,8 @@ const schemas = {
         { if: { properties: { status: { not: { const: "approved" } } } }, then: { properties: { participant_token: false, grant: false } } },
         // a token is never re-delivered (SCR-7)
         { if: { properties: { token_delivered: { const: true } }, required: ["token_delivered"] }, then: { properties: { participant_token: false } } },
+        // an approved response carries the grant, and either the token (first retrieval) or token_delivered: true
+        { if: { properties: { status: { const: "approved" } }, required: ["status"] }, then: { required: ["grant"], anyOf: [{ required: ["participant_token"] }, { properties: { token_delivered: { const: true } }, required: ["token_delivered"] }] } },
       ],
     }),
   ),

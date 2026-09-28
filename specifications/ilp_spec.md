@@ -901,6 +901,7 @@ This section supersedes the latter as the protocol object for authority.
   - For **local** principals, grants are RECOMMENDED in 0.0.x and planned to become REQUIRED by 0.4.0 (OI-5).
 - **R-AUTHZ-2 — Issuance.**
   - The host issues a grant when it admits a principal to an event: on operator approval of a registration or join request, or on automatic approval where the event's policy allows it.
+  - *[0.0.2, SCR-7]* For a remote join, the host MAY instead issue the grant atomically with the participant token at the requester's first authenticated retrieval after approval (§10.4 step 6), because `credential_binding` needs the token. The issuance receipt is then written at that moment. Approval itself is receipted when it happens.
   - Issuance is a consequential action and produces a receipt (R-CORE-22).
 - **R-AUTHZ-3 — Envelope.**
   - A grant is a JWS per R-CORE-36(a), with `typ: "ilp-grant+jwt"`.
@@ -1327,7 +1328,7 @@ The steps:
    6. A's revocation state for the claim and its subject is fresh and clean (else `SUBJECT_REVOKED` or `REVOCATION_STATE_UNKNOWN`).
 
    B then creates or reuses a **shadow principal** for M (origin global ID, marked `remote`, **no email**) and a `pending` registration.
-5. **Admit.** B's operator approves or rejects through the normal moderation API. Approval activates membership and issues **both** a participant token bound to the shadow principal (and agent) **and an authorization grant** (R-AUTHZ-2).
+5. **Admit.** B's operator approves or rejects through the normal moderation API. Approval activates membership; B issues **both** a participant token bound to the shadow principal (and agent) **and an authorization grant** (R-AUTHZ-2) — at approval, or atomically at the first authenticated retrieval (SCR-7).
 6. **Deliver.** M retrieves the status, token, and grant with `GET https://B/ilp/v1/events/{E}/join-requests/{id}`, authenticated by the retrieval key. *[0.0.2, SCR-7]* B MAY mint and deliver the token only once, at the first authenticated retrieval after approval; later retrievals then carry the grant and `token_delivered: true`, never the token. B MAY notify A (`POST https://A/ilp/v1/federation/notify`, signed, best-effort). Polling remains the guaranteed path.
 7. **Participate.** M and M's agent use B's ILP-EVENT API exactly as a local participant would, and every governed action is evaluated against the grant (§7).
 
