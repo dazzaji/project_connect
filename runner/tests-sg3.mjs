@@ -81,7 +81,7 @@ export const SG3_TESTS = {
     await mk("E_nonfed", { visibility: "public" });
     await mk("E_dir", {});
     await mk("E_local", { visibility: "public", registration_approval: "auto" });
-    for (const k of ["E2", "E_short", "E_mandate", "E_excl", "E_dir", "E_local"]) ctx.creds.operator[k] = await host.credential("operator", ctx.events[k].id);
+    for (const k of ["E2", "E_short", "E_mandate", "E_excl", "E_dir", "E_local", "E_private"]) ctx.creds.operator[k] = await host.credential("operator", ctx.events[k].id);
     ctx.homeEvent = await home.createEvent({ slug: `${ctx.tag}-home` });
     // directory fixtures on the runner-owned pc-aux (PC-DIR-3): unknown members must be pruned, malformed entries dropped
     const auxHost = new URL(ctx.aux.base).hostname;
@@ -92,6 +92,7 @@ export const SG3_TESTS = {
     const malformed = { ...entry(ctx.dirFixture.malformed), description: "x".repeat(8000) };
     await http("POST", `${ctx.aux.base}/ilp/v1/admin/directory-fixtures`, { bearer: ctx.aux.admin, body: { entries: [valid, malformed] } });
     ctx.local = await host.localParticipant(ctx.events.E_local);
+    ctx.privLocal = await host.localParticipant(ctx.events.E_private);
   },
 
   // ---- core conventions ----
@@ -182,7 +183,10 @@ export const SG3_TESTS = {
     expectProblem(await http("GET", `${ctx.host.base}/ilp/v1/events/${P.id}/feed?since=0`), "NOT_FOUND", "private event feed");
     expectProblem(await http("GET", `${ctx.host.base}/ilp/v1/events/${P.id}/receipts`), "NOT_FOUND", "private event receipts");
     expectProblem(await http("POST", `${ctx.host.base}/ilp/v1/events/${P.id}/join-requests`, { body: {} }), "NOT_FOUND", "join to a private event");
-    return { hidden: hidden.length, private_probes: 3 };
+    // ...and IS visible to its own participant and its operator (R-CORE-24: visibility follows the event, not "nobody")
+    expectOk(await http("GET", `${ctx.host.base}/ilp/v1/events/${P.id}/feed?since=0`, { bearer: ctx.privLocal.participant_token }), 200, "private feed to its own participant");
+    expectOk(await http("GET", `${ctx.host.base}/ilp/v1/events/${P.id}/receipts`, { bearer: ctx.creds.operator.E_private }), 200, "private receipts to its operator");
+    return { hidden: hidden.length, private_probes: 5 };
   },
   async "PC-DIR-3"(ctx) {
     const agg = expectOk(await http("GET", `${ctx.home.base}/ilp/v1/federation/events?scope=aggregated`), 200, "home aggregated directory");

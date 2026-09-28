@@ -76,6 +76,48 @@ const PROBES = {
     expectProblem(await http("POST", `${host.base}/ilp/v1/events/${ev.id}/actions`, { body: { kind: "unconference.proposal", payload: { title: "big", content: "x".repeat(40000) } } }), "PAYLOAD_TOO_LARGE", "unauthenticated oversized payload");
     return { reported: "PAYLOAD_TOO_LARGE" };
   },
+  // a local token on another event with a presented grant: 4a is reported, not an unknown credential (SG2R2-LOCAL-4A / ENF3-GREEN)
+  async "SG2R2-LOCAL-4A"(host) {
+    const e1 = await host.createEvent({ slug: `reg-l4a1-${Date.now().toString(36)}`, visibility: "public", registration_approval: "auto" });
+    const e2 = await host.createEvent({ slug: `reg-l4a2-${Date.now().toString(36)}` });
+    const lp = await host.localParticipant(e1);
+    const a = await admitted(host, "l4a");
+    const g = (await retrieve(host, a)).json.grant;
+    const [h, p, s] = g.split(".");
+    const tampered = `${h}.${b64u.encode(Buffer.from(b64u.decode(p).toString("utf8").replace('"participant"', '"participanu"'), "utf8"))}.${s}`;
+    const act = (grant) => http("POST", `${host.base}/ilp/v1/events/${e2.id}/actions`, { bearer: lp.participant_token, headers: grant ? { "ilp-grant": grant } : {}, body: { kind: "unconference.proposal", payload: { title: "x", content: "y" } } });
+    expectProblem(await act(tampered), "SIGNATURE_INVALID", "local token + tampered grant on another event");
+    expectProblem(await act(null), "FORBIDDEN", "local token on another event, no grant");
+    return { tampered: "SIGNATURE_INVALID", plain: "FORBIDDEN" };
+  },
+  // event status (7) is reported before an undefined in-scope action kind (9) (SG2R2-KIND-PHASE)
+  async "SG2R2-KIND-PHASE"(host) {
+    const ev = await host.createEvent({ slug: `reg-kp-${Date.now().toString(36)}`, grant_actions: ["unconference.proposal", "unconference.bogus"], grant_exclusions: [] });
+    const op = await host.credential("operator", ev.id);
+    const syn = expectOk(await http("POST", `${aux.base}/ilp/v1/admin/synthetic/humans`, { bearer: auxProv, body: { display_name: "KP" } }), 201, "synthetic");
+    const claim = expectOk(await http("POST", `${aux.base}/ilp/v1/claims`, { bearer: auxProv, body: { purpose: "event_join", event: ev.global_id, aud: host.base, agent: null, on_behalf_of: syn.human } }), 201, "claim").claim;
+    const j = expectOk(await http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests`, { body: { claim } }), 202, "join");
+    expectOk(await http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests/${local(j.join_request_id)}/approve`, { bearer: op, body: {} }), 200, "approve");
+    const tok = (await http("GET", `${host.base}/ilp/v1/events/${ev.id}/join-requests/${local(j.join_request_id)}`, { bearer: j.retrieval_key })).json.participant_token;
+    await host.close(ev);
+    expectProblem(await http("POST", `${host.base}/ilp/v1/events/${ev.id}/actions`, { bearer: tok, body: { kind: "unconference.bogus", payload: {} } }), "PHASE_MISMATCH", "undefined kind on a closed event");
+    return { reported: "PHASE_MISMATCH" };
+  },
+  // operator routes: step 1 before step 2 — no existence oracle (SG2R2-JOIN-ORDER)
+  async "SG2R2-JOIN-ORDER"(host) {
+    const priv = await host.createEvent({ slug: `reg-jo-${Date.now().toString(36)}`, visibility: "private" });
+    expectProblem(await http("GET", `${host.base}/ilp/v1/events/${priv.id}/join-requests`), "AUTH_MISSING", "unauthenticated, private event");
+    expectProblem(await http("GET", `${host.base}/ilp/v1/events/00000000-0000-7000-8000-000000000000/join-requests`), "AUTH_MISSING", "unauthenticated, no such event");
+    return { both: "AUTH_MISSING" };
+  },
+  // §10.4 order: audience is reported before a schema failure (SG2R2-CLAIM-ORDER)
+  async "SG2R2-CLAIM-ORDER"(host) {
+    const ev = await host.createEvent({ slug: `reg-co-${Date.now().toString(36)}` });
+    const t = nowS();
+    const c = signJws({ iss: aux.base, sub: `ilp:${hostOf(aux.base)}:human:00000000-0000-7000-8000-00000000c0de`, aud: "http://elsewhere.localhost:4999", iat: t, exp: t + 600, jti: `claim-co-${Date.now()}`, display_name: "Order", verified: "yes", verified_method: null, agent: null, purpose: "event_join", event: ev.global_id, consent_accepted: null }, aux.key, TYP.claim);
+    expectProblem(await http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests`, { body: { claim: c } }), "CLAIM_AUDIENCE_MISMATCH", "wrong audience and schema-invalid");
+    return { reported: "CLAIM_AUDIENCE_MISMATCH" };
+  },
   // join state changes are receipted (ASTRA-R2-16)
   async "ASTRA-R2-16"(host) {
     const a = await admitted(host, "r16", { approve: false });

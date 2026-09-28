@@ -418,11 +418,13 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
     const ev = eventByRef(ref);
     if (t.event !== ev.id) {
       if (ev.visibility === "private") throw new Problem("NOT_FOUND", `event ${ref}`);
-      if (t.remote) {
-        grantChecks(ev, t, bearer, headers, body.kind, mandate); // 4a–5 in order
+      // a known, valid token for another event is not an unknown credential: grant checks run in order (4a–5),
+      // for remote tokens always and for local tokens whenever a grant is presented (SG2R2-LOCAL-4A)
+      if (t.remote || headers["ilp-grant"]) {
+        grantChecks(ev, t, bearer, headers, body.kind, mandate);
         throw new Problem("GRANT_EVENT_MISMATCH");
       }
-      throw new Problem("AUTH_INVALID", "this token belongs to another event");
+      throw new Problem("FORBIDDEN", "this participant token belongs to another event");
     }
     // step 3
     const reg = ev.registrations.get(t.principal);
@@ -435,9 +437,10 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
       if (prior) return { ev, t, g, mandate, prior };
     }
     // step 7: status, phase, expect_phase
+    // step 7 (status) precedes step 9 (an action kind the pack does not define)
+    if (ev.status !== "live") throw new Problem("PHASE_MISMATCH", "event not live", { code_detail: "EVENT_NOT_LIVE" });
     const at = ACTIONS[body.kind];
     if (!at) throw new Problem("VALIDATION_FAILED", `unknown action kind ${body.kind}`);
-    if (ev.status !== "live") throw new Problem("PHASE_MISMATCH", "event not live", { code_detail: "EVENT_NOT_LIVE" });
     if (!at.phases.includes(ev.phase)) throw new Problem("PHASE_MISMATCH", `not allowed in ${ev.phase}`, { code_detail: "ACTION_PHASE_FORBIDDEN", current_phase: ev.phase, allowed_phases: at.phases });
     if (body.expect_phase !== undefined && body.expect_phase !== ev.phase) throw new Problem("PHASE_MISMATCH", "expect_phase does not match", { code_detail: "EXPECT_PHASE_STALE", current_phase: ev.phase });
     // step 8: role
@@ -450,7 +453,7 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
       target = ev.actions.find((a) => a.id === body.target_action || a.id.endsWith(`:${body.target_action}`));
       if (!target) throw new Problem("NOT_FOUND", "target action not found");
       if (target.kind !== at.target) throw new Problem("VALIDATION_FAILED", `${body.kind} may only target ${at.target}`);
-      if (target.subject_human === t.principal) throw new Problem("CONFLICT", "self-action forbidden", { code_detail: "SELF_VOTE_FORBIDDEN" });
+      if (target.subject_human === t.principal) throw new Problem("FORBIDDEN", "self-action forbidden", { code_detail: "SELF_VOTE_FORBIDDEN" }); // parent per §17.2.2 (dispute SG2R2-SELFVOTE)
       if (ev.actions.some((a) => a.kind === body.kind && a.subject_human === t.principal && a.target === target.id)) throw new Problem("CONFLICT", "already acted on this target", { code_detail: "ALREADY_EXISTS_FOR_TARGET" });
     }
     // step 10: caps
@@ -681,16 +684,17 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
         } else throw new Problem(e.code === "VALIDATION_FAILED" ? "SIGNATURE_INVALID" : e.code);
       }
       const c = decoded.payload;
-      const v = validateLenient("identity-claim", c);
-      if (!v.ok) throw new Problem("VALIDATION_FAILED", `claim payload: ${v.errors.slice(0, 3).join("; ")}`);
+      // §10.4 step 4 order: audience (3), expiry (4), replay (5) are reported before a schema failure
       // 3. audience
       if (c.aud !== baseUrl) throw new Problem("CLAIM_AUDIENCE_MISMATCH");
-      // 4. expiry (and lifetime)
+      // 4. expiry
       const now = nowS();
-      if (now - SKEW_S > c.exp) throw new Problem("CLAIM_EXPIRED");
-      if (c.exp - c.iat > 86400 || c.iat > now + SKEW_S) throw new Problem("VALIDATION_FAILED", "claim lifetime or iat out of bounds");
+      if (Number.isSafeInteger(c.exp) && now - SKEW_S > c.exp) throw new Problem("CLAIM_EXPIRED");
       // 5. replay
-      if (seenClaims.has(c.jti)) throw new Problem("CLAIM_REPLAYED");
+      if (typeof c.jti === "string" && seenClaims.has(c.jti)) throw new Problem("CLAIM_REPLAYED");
+      const v = validateLenient("identity-claim", c);
+      if (!v.ok) throw new Problem("VALIDATION_FAILED", `claim payload: ${v.errors.slice(0, 3).join("; ")}`);
+      if (c.exp - c.iat > 86400 || c.iat > now + SKEW_S) throw new Problem("VALIDATION_FAILED", "claim lifetime or iat out of bounds");
       // reserve the jti before any await, so concurrent submissions of one claim cannot both pass (released on failure)
       seenClaims.add(c.jti);
       let accepted = false;
@@ -728,6 +732,7 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
       }
     }],
     ["GET", "/ilp/v1/events/:ref/join-requests", ({ headers, params }) => {
+      requireCredential(headers, ["operator"]); // step 1 before step 2: no existence oracle for private events
       const ev = eventByRef(params.ref);
       requireCredential(headers, ["operator"], ev.id);
       return { body: { items: [...joinRequests.values()].filter((j) => j.event === ev.id).map((j) => ({ join_request_id: j.gid, status: j.status, subject: j.subject, agent: j.agent, home: j.home, display_name: j.display_name })), next_cursor: null } };
@@ -761,6 +766,7 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
       return { body: { ...base, participant_token: token, grant: g.jws } };
     }],
     ["POST", "/ilp/v1/events/:ref/join-requests/:id/:verdict", ({ headers, params }) => {
+      requireCredential(headers, ["operator"]); // step 1 before step 2
       const ev = eventByRef(params.ref);
       requireCredential(headers, ["operator"], ev.id);
       const jr = joinRequests.get(params.id) ?? [...joinRequests.values()].find((j) => j.gid.endsWith(`:${params.id}`));

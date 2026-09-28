@@ -3,7 +3,7 @@ import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { canonicalBytes } from "../lib/jcs.mjs";
-import { generateKey, sha256Hex, signJws, TYP, verifyDetached, verifyJws } from "../lib/jws.mjs";
+import { decodeJws, generateKey, sha256Hex, signJws, TYP, verifyDetached, verifyJws } from "../lib/jws.mjs";
 import { validate } from "../lib/schemas.mjs";
 import { assemblePacket } from "../packet/assemble.mjs";
 import { thumbprint, verifyPacket } from "../verifier/verify.mjs";
@@ -31,6 +31,14 @@ export async function checkExport(ctx, bundle) {
   for (const f of m.files) check(sha(Buffer.from(bundle.files[f.path], "utf8")) === f.sha256, `export file ${f.path} hash`);
   for (const need of ["grants.jsonl", "revocations.jsonl", "claims.jsonl", "receipts.jsonl"]) check(need in bundle.files, `export lacks ${need}`);
   check(!bundle.files["claims.jsonl"].includes("@"), "claims.jsonl carries an email-like value");
+  // SCR-8: every claims entry carries the signed identity claim, matching its jti and sub
+  const claimLines = bundle.files["claims.jsonl"].split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  check(claimLines.length > 0, "claims.jsonl is empty although a remote participant joined");
+  for (const c of claimLines) {
+    check(typeof c.claim === "string" && c.claim.split(".").length === 3, `claims.jsonl entry ${c.jti} lacks the signed claim JWS`);
+    const { header, payload } = decodeJws(c.claim);
+    check(header.typ === TYP.claim && payload.jti === c.jti && payload.sub === c.sub, `claims.jsonl entry ${c.jti}: JWS does not match its jti/sub`);
+  }
   for (const line of bundle.files["grants.jsonl"].split("\n").filter(Boolean)) {
     const g = JSON.parse(line);
     verifyJws(g.jws, (kid) => d.keys.find((k) => k.kid === kid) ?? null, { typ: TYP.grant });
