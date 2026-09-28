@@ -443,7 +443,7 @@ export function createNode({ baseUrl, name, key, build, deploymentId, adminToken
       requireCredential(headers, ["provisioning"]);
       const map = params.type === "humans" ? humans : params.type === "agents" ? agents : null;
       if (!map) throw new Problem("NOT_FOUND");
-      const subj = map.get(params.id);
+      const subj = map.get(params.id) ?? map.get(gid(params.type === "humans" ? "human" : "agent", params.id)); // local id or global ID
       if (!subj) throw new Problem("NOT_FOUND");
       if (params.type === "humans" && !subj.synthetic) throw new Problem("FORBIDDEN", "not a synthetic principal");
       if (params.type === "agents" && !humans.get(subj.human)?.synthetic) throw new Problem("FORBIDDEN", "not a synthetic principal");
