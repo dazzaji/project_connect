@@ -360,10 +360,12 @@ const PROBES = {
   async "ASTRA-R2-12"(host) {
     const ev = await host.createEvent({ slug: `reg-r12-${Date.now().toString(36)}`, visibility: "private", registration_approval: "auto" });
     const op = await host.credential("operator", ev.id);
-    // a caller without membership cannot register on the private event: it answers exactly like an absent id (SG2R5-PRIV-ROUTE)
+    // Privacy equivalence (SG2R5-PRIV-ROUTE): session-required registration fails at R-CORE-29 step 1
+    // with AUTH_MISSING; the reference has no local-registration route and returns NOT_FOUND.
+    // Both must be valid refusals, equal for private/absent, and independently leave all observed state unchanged.
     const absent = "00000000-0000-7000-8000-000000000000";
-    const anonPriv = await expectRefusal(host, ev.id, op, () => http("POST", `${host.base}/ilp/v1/events/${ev.id}/registrations`, { body: {} }), "NOT_FOUND", "anonymous private registration");
-    const anonAbsent = await expectRefusal(host, ev.id, op, () => http("POST", `${host.base}/ilp/v1/events/${absent}/registrations`, { body: {} }), "NOT_FOUND", "anonymous absent registration");
+    const anonPriv = await expectRefusal(host, ev.id, op, () => http("POST", `${host.base}/ilp/v1/events/${ev.id}/registrations`, { body: {} }), ["AUTH_MISSING", "NOT_FOUND"], "anonymous private registration");
+    const anonAbsent = await expectRefusal(host, ev.id, op, () => http("POST", `${host.base}/ilp/v1/events/${absent}/registrations`, { body: {} }), ["AUTH_MISSING", "NOT_FOUND"], "anonymous absent registration");
     check(`${anonPriv.status} ${anonPriv.json?.title}` === `${anonAbsent.status} ${anonAbsent.json?.title}`, `anonymous registration: private ${anonPriv.status} ${anonPriv.json?.title} vs absent ${anonAbsent.status} ${anonAbsent.json?.title}`);
     // the member is an ordinary participant prepared by the node's own setup surface; registration/token claim and the feed read
     // below are the tested behavior. Any setup-fixture provenance the adapter reports is recorded as supplemental setup evidence
