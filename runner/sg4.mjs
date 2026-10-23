@@ -14,7 +14,10 @@ const sha = (b) => createHash("sha256").update(b).digest("hex");
 
 // NEG-8 is rejected by the content schema before file verification. Bind this catalog to the reviewed bytes.
 export const NEGATIVE_VERIFIER_BINDING = Object.freeze({
-  "verifier/verify.mjs": "fc19d3794fc165fe1239a14e468a1fbdf82f438fce319de7fa2cc76c22be6e00",
+  // connect247 integration rebinding: the composed verifier adds only opt-in core-service / export-provenance modes; its
+  // envelope + content-manifest guard region (where NEG-8 is rejected) is byte-identical to the reviewed a0ae1a verifier
+  // (tests/binding247.test.mjs pins that region). Binding stays exact, now to the composed bytes (a0ae1a: fc19d379…).
+  "verifier/verify.mjs": "3a52a28e2ec98f6af516d74015b6dbb66a470b5961e6bed26050cfac6ca822d6",
   "specifications/schemas/evidence-packet-manifest.schema.json": "b96b1eb686b7ef044afd7d5f368cdfdc909cf79d0737c400aabf30ac74508b05",
 });
 export function assertNegativeVerifierBinding(hashOf = (rel) => sha(readFileSync(new URL("../" + rel, import.meta.url)))) {
