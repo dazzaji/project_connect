@@ -330,10 +330,17 @@ const PROBES = {
   // a private event's feed is visible to its own participant token (ASTRA-R2-12) and hidden otherwise (SG2-PRIV-FEED)
   async "ASTRA-R2-12"(host) {
     const ev = await host.createEvent({ slug: `reg-r12-${Date.now().toString(36)}`, visibility: "private", registration_approval: "auto" });
+    // a caller without membership cannot register on the private event: it answers exactly like an absent id (SG2R5-PRIV-ROUTE)
+    const absent = "00000000-0000-7000-8000-000000000000";
+    const [anonPriv, anonAbsent] = [await http("POST", `${host.base}/ilp/v1/events/${ev.id}/registrations`, { body: {} }), await http("POST", `${host.base}/ilp/v1/events/${absent}/registrations`, { body: {} })];
+    check(`${anonPriv.status} ${anonPriv.json?.title}` === `${anonAbsent.status} ${anonAbsent.json?.title}`, `anonymous registration: private ${anonPriv.status} ${anonPriv.json?.title} vs absent ${anonAbsent.status} ${anonAbsent.json?.title}`);
+    // the member is an ordinary participant: on Beta its membership is a declared harness test fixture (no product invite
+    // workflow exists — recorded functional gap); registration and token claim then go through the normal HTTP routes
     const lp = await host.localParticipant(ev);
+    if (host.kind === "beta") check(lp.fixture?.kind === "seeded-active-cohort-membership" && lp.fixture.role === "participant", `Beta private-member fixture provenance missing: ${JSON.stringify(lp.fixture)}`);
     expectOk(await http("GET", `${host.base}/ilp/v1/events/${ev.id}/feed?since=0`, { bearer: lp.participant_token }), 200, "own private feed");
     expectProblem(await http("GET", `${host.base}/ilp/v1/events/${ev.id}/feed?since=0`), "NOT_FOUND", "anonymous private feed");
-    return { own: 200, anonymous: 404 };
+    return { own: 200, anonymous: 404, anonymous_register: `${anonPriv.status} ${anonPriv.json?.title}`, fixture: lp.fixture ?? null };
   },
   // claim minting refuses a claim that would be schema-invalid (ASTRA-R2-14)
   async "ASTRA-R2-14"(host) {
