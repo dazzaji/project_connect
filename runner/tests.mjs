@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { decodeJws, signJws, TYP, verifyJws, b64u, generateKey } from "../lib/jws.mjs";
 import { verifyReceiptChain } from "../lib/receipt.mjs";
 import { validate } from "../lib/schemas.mjs";
-import { check, expectNoSideEffects, expectOk, expectProblem, http, observe } from "./lib.mjs";
+import { check, expectNoSideEffects, expectOk, expectProblem, expectRefusal, http, observe, observeJoins } from "./lib.mjs";
 
 const S256 = (s) => createHash("sha256").update(s, "utf8").digest("base64url");
 const CLAIM_MEMBERS = new Set(["iss", "sub", "aud", "iat", "exp", "jti", "display_name", "verified", "verified_method", "agent", "purpose", "event", "consent_accepted"]);
@@ -131,17 +131,16 @@ export const TESTS = {
     const { host, home, aux } = ctx;
     const E1 = ctx.events.E1;
     // rejected claims must create no join request and change no event state (observed before/after)
-    const joins = async () => expectOk(await http("GET", `${host.base}/ilp/v1/events/${E1.id}/join-requests`, { bearer: ctx.creds.operator.E1 }), 200, "operator join list").items.length;
-    const joinsBefore = await joins();
-    const stateBefore = await observe(host, E1.id);
-    expectProblem(await http("POST", `${host.base}/ilp/v1/events/${E1.id}/join-requests`, { body: { claim: ctx.claim } }), "CLAIM_REPLAYED", "replayed claim");
+    const joins = () => observeJoins(host, E1.id, ctx.creds.operator.E1);
+    const refuse = (claim, code, what) => expectRefusal(host, E1.id, ctx.creds.operator.E1, () => http("POST", `${host.base}/ilp/v1/events/${E1.id}/join-requests`, { body: { claim } }), code, what);
+    await refuse(ctx.claim, "CLAIM_REPLAYED", "replayed claim");
     // a claim legitimately minted by the home for another audience (pc-aux)
     const other = expectOk(await http("POST", `${home.base}/ilp/v1/claims`, { bearer: ctx.creds.provisioning, body: { purpose: "event_join", event: ctx.auxEvent.global_id, aud: aux.base, agent: ctx.subject.agent.id, on_behalf_of: ctx.subject.human } }), 201, "claim for another audience");
-    expectProblem(await http("POST", `${host.base}/ilp/v1/events/${E1.id}/join-requests`, { body: { claim: other.claim } }), "CLAIM_AUDIENCE_MISMATCH", "claim for another audience");
+    await refuse(other.claim, "CLAIM_AUDIENCE_MISMATCH", "claim for another audience");
     // expired: signed by the runner-owned pc-aux (never a key of a node under test)
     const t = nowS() - 3600;
     const expired = signJws({ iss: aux.base, sub: `ilp:${new URL(aux.base).hostname}:human:00000000-0000-7000-8000-00000000e001`, aud: host.base, iat: t - 600, exp: t, jti: `claim-expired-${ctx.tag}-${Date.now()}`, display_name: "Expired", verified: true, verified_method: "synthetic", agent: null, purpose: "event_join", event: E1.global_id, consent_accepted: null }, aux.key, TYP.claim);
-    expectProblem(await http("POST", `${host.base}/ilp/v1/events/${E1.id}/join-requests`, { body: { claim: expired } }), "CLAIM_EXPIRED", "expired claim");
+    await refuse(expired, "CLAIM_EXPIRED", "expired claim");
     // tampered: a fresh valid claim with one payload byte altered
     const fresh = expectOk(await http("POST", `${home.base}/ilp/v1/claims`, { bearer: ctx.creds.provisioning, body: { purpose: "event_join", event: E1.global_id, aud: host.base, agent: ctx.subject.agent.id, on_behalf_of: ctx.subject.human } }), 201, "claim to tamper");
     const [h, p, s] = fresh.claim.split(".");
@@ -149,22 +148,22 @@ export const TESTS = {
     const text = b64u.decode(p).toString("utf8");
     check(text.includes("Synthetic"), "cannot construct tampered claim");
     const tampered = `${h}.${b64u.encode(Buffer.from(text.replace("Synthetic", "Synthetik"), "utf8"))}.${s}`;
-    expectProblem(await http("POST", `${host.base}/ilp/v1/events/${E1.id}/join-requests`, { body: { claim: tampered } }), "SIGNATURE_INVALID", "tampered claim");
+    await refuse(tampered, "SIGNATURE_INVALID", "tampered claim");
     // paired failure: tampered AND for another audience → the signature (step 2) is reported before the audience (step 3)
     const [oh, op, os] = other.claim.split(".");
     const otext = b64u.decode(op).toString("utf8");
     const tamperedOther = `${oh}.${b64u.encode(Buffer.from(otext.replace("Synthetic", "Synthetik"), "utf8"))}.${os}`;
-    expectProblem(await http("POST", `${host.base}/ilp/v1/events/${E1.id}/join-requests`, { body: { claim: tamperedOther } }), "SIGNATURE_INVALID", "tampered claim for another audience (precedence)");
+    await refuse(tamperedOther, "SIGNATURE_INVALID", "tampered claim for another audience (precedence)");
     // concurrent replay: one fresh claim submitted twice at once → exactly one acceptance
     const race = expectOk(await http("POST", `${home.base}/ilp/v1/claims`, { bearer: ctx.creds.provisioning, body: { purpose: "event_join", event: ctx.events.E1.global_id, aud: host.base, agent: null, on_behalf_of: (expectOk(await http("POST", `${home.base}/ilp/v1/admin/synthetic/humans`, { bearer: ctx.creds.provisioning, body: { display_name: `Race ${ctx.tag}` } }), 201, "race subject")).human } }), 201, "race claim").claim;
-    // every rejection above left no trace
-    check(await joins() === joinsBefore, "a rejected claim created a join request");
-    await expectNoSideEffects(host, E1.id, stateBefore, "rejected claims");
+    // Each preceding rejection was checked separately; the race below intentionally admits one join.
+    const joinsBefore = await joins();
     const both = await Promise.all([0, 1].map(() => http("POST", `${host.base}/ilp/v1/events/${E1.id}/join-requests`, { body: { claim: race } })));
     const accepted = both.filter((r) => r.status === 202).length;
     check(accepted === 1, `concurrent replay: ${accepted} acceptances (want exactly 1)`);
     expectProblem(both.find((r) => r.status !== 202), "CLAIM_REPLAYED", "concurrent replay");
-    check(await joins() === joinsBefore + 1, "concurrent replay must persist exactly one join request");
+    const joinsAfter = await joins();
+    check(joinsAfter.length === joinsBefore.length + 1 && joinsBefore.every(j => joinsAfter.includes(j)), "concurrent replay must persist exactly one join request without altering existing admissions");
     ctx.spareClaim = fresh.claim; // untouched original, unused so far
     return { replay: "CLAIM_REPLAYED", audience: "CLAIM_AUDIENCE_MISMATCH", expired: "CLAIM_EXPIRED", tampered: "SIGNATURE_INVALID" };
   },

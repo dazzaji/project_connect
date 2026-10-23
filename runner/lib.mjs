@@ -42,6 +42,12 @@ export const registeredStatus = (code) => REGISTERED[code];
 export const seenProblems = () => problems;
 
 /** Assert an RFC 9457 ILP problem with `code` (R-CORE-9). */
+export function isProblemMediaType(contentType) {
+  const token = "[!#$%&'*+.^_`|~0-9A-Za-z-]+";
+  const quoted = '"(?:[\\t\\x20-\\x21\\x23-\\x5b\\x5d-\\x7e\\x80-\\xff]|\\\\[\\t\\x20-\\x7e\\x80-\\xff])*"';
+  const media = new RegExp(`^[ \\t]*application/problem\\+json[ \\t]*(?:;[ \\t]*${token}=(?:${token}|${quoted})[ \\t]*)*$`, "i");
+  return typeof contentType === "string" && media.test(contentType);
+}
 export function expectProblem(res, code, what) {
   check(res.json && typeof res.json.type === "string", `${what}: expected problem ${code}, got HTTP ${res.status} ${res.text.slice(0, 200)}`);
   problems.push({ what, status: res.status, contentType: res.contentType, body: res.json });
@@ -54,10 +60,7 @@ export function expectProblem(res, code, what) {
   check(res.json.status === res.status, `${what}: problem.status ${res.json.status} != HTTP ${res.status}`);
   check(res.json.title === got, `${what}: problem.title ${res.json.title} != ${got}`);
   // Exact HTTP media essence, case insensitive; parameters must be token or quoted-string values.
-  const token = "[!#$%&'*+.^_`|~0-9A-Za-z-]+";
-  const quoted = '"(?:[\\t\\x20-\\x21\\x23-\\x5b\\x5d-\\x7e\\x80-\\xff]|\\\\[\\t\\x20-\\x7e\\x80-\\xff])*"';
-  const media = new RegExp(`^[ \\t]*application/problem\\+json[ \\t]*(?:;[ \\t]*${token}=(?:${token}|${quoted})[ \\t]*)*$`, "i");
-  check(typeof res.contentType === "string" && media.test(res.contentType), `${what}: content-type ${res.contentType}`);
+  check(isProblemMediaType(res.contentType), `${what}: content-type ${res.contentType}`);
   const v = validateSchema("problem", res.json);
   check(v.ok, `${what}: problem schema: ${v.errors.join("; ")}`);
   return res.json;
@@ -72,18 +75,28 @@ export function expectOk(res, status, what) {
 // appended to the same fixed endpoint; a peer never supplies the next URL or an observation hook.
 export async function observationPages(url, bearer, what) {
   const items = [], cursors = new Set(); let cursor = null, latest = null;
+  const feed = new URL(url).pathname.endsWith("/feed");
   for (let page = 0; page < 100; page++) {
-    const next = new URL(url); if (cursor !== null) next.searchParams.set("cursor", cursor);
+    const next = new URL(url);
+    if (cursor !== null) next.searchParams.set(feed && typeof cursor === "number" ? "since" : "cursor", String(cursor));
     const r = await http("GET", next.href, bearer ? { bearer } : {});
     check(r.status === 200 && r.json && Array.isArray(r.json.items), `${what}: unreadable HTTP ${r.status}`);
-    check(Object.hasOwn(r.json, "next_cursor") && (r.json.next_cursor === null || typeof r.json.next_cursor === "string" && r.json.next_cursor.length > 0), `${what}: invalid/missing next_cursor`);
-    if (new URL(url).pathname.endsWith("/feed")) {
+    const nc = r.json.next_cursor;
+    check(Object.hasOwn(r.json, "next_cursor") && (nc === null || typeof nc === "string" && nc.length > 0 || feed && Number.isSafeInteger(nc) && nc >= 0), `${what}: invalid/missing next_cursor`);
+    if (feed) {
       check(Number.isSafeInteger(r.json.latest_seq) && r.json.latest_seq >= 0, `${what}: invalid latest_seq`);
       if (latest !== null) check(latest === r.json.latest_seq, `${what}: feed changed during pagination`);
       latest = r.json.latest_seq;
     }
     items.push(...r.json.items); check(items.length <= 20000, `${what}: observation record bound exceeded`);
-    cursor = r.json.next_cursor;
+    // R-CORE-13/14 feeds continue by since=<seq>. Beta returns the numeric tail even at the head (T-A3-2);
+    // list endpoints retain R-CORE-12 opaque cursor semantics. Never substitute a peer-supplied URL.
+    if (feed && typeof nc === "number") {
+      const tail = r.json.items.at(-1)?.seq;
+      check(Number.isSafeInteger(tail) && tail > 0 && nc === tail && nc <= latest, `${what}: invalid feed continuation`);
+      if (nc === latest) return { items, latest_seq: latest };
+    }
+    cursor = nc;
     if (cursor === null) return { items, latest_seq: latest };
     check(!cursors.has(cursor) && r.json.items.length > 0, `${what}: stalled/repeated cursor`); cursors.add(cursor);
   }
