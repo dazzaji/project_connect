@@ -6,6 +6,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { b64u, decodeJws, generateKey, signJws, TYP } from "../lib/jws.mjs";
 import { check, expectNoSideEffects, expectOk, expectProblem, http, observe, PC_ROOT, sleep, startReferenceNode } from "./lib.mjs";
+import { selectProbes } from "./select.mjs";
 import { adapter } from "./setup.mjs";
 
 const args = Object.fromEntries(process.argv.slice(2).map((a, i, all) => (a.startsWith("--") ? [a.slice(2), all[i + 1]] : null)).filter(Boolean));
@@ -391,11 +392,19 @@ async function paginationProbe(node) {
   return { page: f.items.length, latest_seq: f.latest_seq, next_cursor: f.next_cursor };
 }
 
+// --only: validated before any probe runs (unknown, empty or valueless selections fail); default is the full catalog
+let selected;
+try {
+  selected = selectProbes([...Object.keys(PROBES), "ASTRA-R2-02"], process.argv.includes("--only") ? (args.only ?? "") : undefined);
+} catch (e) {
+  console.error(e.message);
+  process.exit(2);
+}
 const results = [];
 for (const [label, host] of [["beta-one", beta], ["pc-ref", ref]]) {
   for (const [id, fn] of Object.entries(PROBES)) {
     // --only ID[,ID]: a focused run of named probes (writer pre/post proof); the default remains the complete set
-    if (args.only && !args.only.split(",").includes(id)) continue;
+    if (!selected.includes(id)) continue;
     try {
       const obs = await fn(host);
       results.push({ id, node: label, status: "pass", obs });
@@ -404,7 +413,7 @@ for (const [label, host] of [["beta-one", beta], ["pc-ref", ref]]) {
     }
     console.log(`${results.at(-1).status === "pass" ? "PASS" : "FAIL"} ${id} @ ${label}${results.at(-1).error ? ` — ${results.at(-1).error}` : ""}`);
   }
-  if (args.only && !args.only.split(",").includes("ASTRA-R2-02")) continue;
+  if (!selected.includes("ASTRA-R2-02")) continue;
   try {
     results.push({ id: "ASTRA-R2-02", node: label, status: "pass", obs: await paginationProbe(host) });
   } catch (e) {
