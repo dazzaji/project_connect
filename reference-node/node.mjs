@@ -29,6 +29,18 @@ function findSecret(map, t) {
 const random = (prefix) => prefix + randomBytes(32).toString("base64url");
 const hostOf = (baseUrl) => new URL(baseUrl).hostname;
 const hostOfGid = (gid) => gid.split(":")[1];
+
+/** R-FED-7 step 4.1 re-applied to a home peer's CURRENT record, after an await during which it may have been suspended,
+ *  removed or replaced (R-FED-16; nothing may be written for a request step 1 rejects, R-AUTHZ-11). `current` is the record
+ *  now registered for the host, `original` the one step 1 accepted. Returns null when admission may continue, the step 1
+ *  problem code, or "REPLACED" for a re-added peer (answered 503 REVOCATION_STATE_UNKNOWN). */
+export function currentPeerProblem(current, original) {
+  if (!current || current.state === "removed" || current.state === "proposed") return "NOT_A_PEER";
+  if (current.state === "suspended") return "PEER_SUSPENDED";
+  if (current !== original) return "REPLACED";
+  return null;
+}
+
 // the identity claim's consent_accepted shape, also required of a join body's own consent_accepted (ASTRA-R3-02)
 const validConsent = (c) => c === null || (typeof c === "object" && !Array.isArray(c) && Object.keys(c).every((k) => ["kind", "text_version", "text_sha256"].includes(k))
   && typeof c.kind === "string" && typeof c.text_version === "string" && typeof c.text_sha256 === "string" && /^[0-9a-f]{64}$/.test(c.text_sha256));
@@ -747,7 +759,8 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
             // replace trusted keys only with a fully valid discovery document for the same host
             const doc = await fetchJson(`${p.base_url}/.well-known/interlateral.json`);
             const dv = receiveLenient("discovery", doc);
-            if (dv.ok && dv.value.instance.host === p.host) {
+            // and only onto the peer's current, not-removed record (no write to a replaced or removed record)
+            if (dv.ok && dv.value.instance.host === p.host && peers.get(p.host) === p && p.state !== "removed") {
               p.keys = dv.value.keys;
               p.discovery = dv.value;
             }
@@ -781,8 +794,11 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
       } catch (e) {
         log(`join: refresh of ${p.host} failed: ${e.message}`);
       }
-      // the record may have been replaced or removed while the refresh was queued: judge the peer's current record only
-      if (peers.get(p.host) !== p) throw new Problem("REVOCATION_STATE_UNKNOWN", "home peer record changed during the request", { retry_after: revocationBoundS });
+      // the peer may have been suspended, removed or replaced during the awaits above: re-apply step 1 to its CURRENT record
+      // before anything is written (R-FED-7 step 4.1, R-FED-16, R-AUTHZ-11)
+      const peerProblem = currentPeerProblem(peers.get(p.host), p);
+      if (peerProblem === "REPLACED") throw new Problem("REVOCATION_STATE_UNKNOWN", "home peer record changed during the request", { retry_after: revocationBoundS });
+      if (peerProblem) throw new Problem(peerProblem);
       if (!peerFresh(p)) throw new Problem("REVOCATION_STATE_UNKNOWN", "home revocation state cannot be established", { retry_after: revocationBoundS });
       if (p.revoked.has(`claim:${c.jti}`) || p.revoked.has(`human:${c.sub}`) || (c.agent && (p.revoked.has(`agent:${c.agent.id}`) || p.revoked.has(`plate:${c.agent.license_plate}`)))) throw new Problem("SUBJECT_REVOKED");
       if (c.event !== ev.gid) throw new Problem("VALIDATION_FAILED", "claim is for another event");
