@@ -5,6 +5,10 @@ import { decodeJws, signJws, TYP, verifyJws, b64u, generateKey } from "../lib/jw
 import { verifyReceiptChain } from "../lib/receipt.mjs";
 import { validate } from "../lib/schemas.mjs";
 import { check, expectNoSideEffects, expectOk, expectProblem, expectRefusal, http, observe, observeJoins } from "./lib.mjs";
+// triage248 (S4 composition only): when E1 declares the host's publication consent (setup returned exactly
+// {kind, text_version, text_sha256}), the SYNTHETIC golden-thread participant opts in through its own home claim request;
+// undeclared keeps the prior request byte-for-byte. Never a real user's consent; no host acceptance is written.
+const e1ConsentOptIn = (ctx) => (ctx.events?.E1?.consent ? { consent_accepted: { kind: ctx.events.E1.consent.kind, text_version: ctx.events.E1.consent.text_version, text_sha256: ctx.events.E1.consent.text_sha256 } } : {});
 
 const S256 = (s) => createHash("sha256").update(s, "utf8").digest("base64url");
 const CLAIM_MEMBERS = new Set(["iss", "sub", "aud", "iat", "exp", "jti", "display_name", "verified", "verified_method", "agent", "purpose", "event", "consent_accepted"]);
@@ -93,7 +97,7 @@ export const TESTS = {
     // a claim whose audience is not an active peer is refused
     const bogus = await http("POST", `${home.base}/ilp/v1/claims`, { bearer: ctx.creds.provisioning, body: { purpose: "event_join", event: "ilp:not-a-peer.localhost:event:00000000-0000-7000-8000-000000000000", aud: "http://not-a-peer.localhost:4999", agent: syn.agent.id, on_behalf_of: syn.human } });
     expectProblem(bogus, "NOT_A_PEER", "claim for a non-peer audience");
-    const r = expectOk(await http("POST", `${home.base}/ilp/v1/claims`, { bearer: ctx.creds.provisioning, body: { purpose: "event_join", event: ctx.events.E1.global_id, aud: host.base, agent: syn.agent.id, on_behalf_of: syn.human } }), 201, "mint claim");
+    const r = expectOk(await http("POST", `${home.base}/ilp/v1/claims`, { bearer: ctx.creds.provisioning, body: { purpose: "event_join", event: ctx.events.E1.global_id, aud: host.base, agent: syn.agent.id, on_behalf_of: syn.human, ...e1ConsentOptIn(ctx) } }), 201, "mint claim");
     const hd = await discoveryOf(home);
     const { header, payload } = verifyJws(r.claim, keyResolver(hd), { typ: TYP.claim });
     ctx.observe(home.name, header.kid);
@@ -142,7 +146,7 @@ export const TESTS = {
     const expired = signJws({ iss: aux.base, sub: `ilp:${new URL(aux.base).hostname}:human:00000000-0000-7000-8000-00000000e001`, aud: host.base, iat: t - 600, exp: t, jti: `claim-expired-${ctx.tag}-${Date.now()}`, display_name: "Expired", verified: true, verified_method: "synthetic", agent: null, purpose: "event_join", event: E1.global_id, consent_accepted: null }, aux.key, TYP.claim);
     await refuse(expired, "CLAIM_EXPIRED", "expired claim");
     // tampered: a fresh valid claim with one payload byte altered
-    const fresh = expectOk(await http("POST", `${home.base}/ilp/v1/claims`, { bearer: ctx.creds.provisioning, body: { purpose: "event_join", event: E1.global_id, aud: host.base, agent: ctx.subject.agent.id, on_behalf_of: ctx.subject.human } }), 201, "claim to tamper");
+    const fresh = expectOk(await http("POST", `${home.base}/ilp/v1/claims`, { bearer: ctx.creds.provisioning, body: { purpose: "event_join", event: E1.global_id, aud: host.base, agent: ctx.subject.agent.id, on_behalf_of: ctx.subject.human, ...e1ConsentOptIn(ctx) } }), 201, "claim to tamper");
     const [h, p, s] = fresh.claim.split(".");
     // one character of the display name changed; the payload stays valid JSON, so the failure is the signature
     const text = b64u.decode(p).toString("utf8");
