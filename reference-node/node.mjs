@@ -737,10 +737,12 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
 
     // join (§10.4)
     ["POST", "/ilp/v1/events/:ref/join-requests", async ({ params, body }) => {
-      const ev = eventByRef(params.ref);
-      if (ev.visibility === "private") throw new Problem("NOT_FOUND", `event ${params.ref}`); // does not exist to a remote requester
+      // R-CORE-29 step 0 (F204-1): the {claim, consent_accepted?} envelope shape is checked before any event lookup, so
+      // private and absent events give the same VALIDATION_FAILED; claim decoding/trust and affiliation stay later
       if (typeof body.claim !== "string") throw new Problem("VALIDATION_FAILED", "claim is required");
       if (body.consent_accepted !== undefined && !validConsent(body.consent_accepted)) throw new Problem("VALIDATION_FAILED", "consent_accepted must be null or {kind, text_version, text_sha256}");
+      const ev = eventByRef(params.ref);
+      if (ev.visibility === "private") throw new Problem("NOT_FOUND", `event ${params.ref}`); // does not exist to a remote requester
       let decoded;
       try {
         decoded = decodeJws(body.claim);

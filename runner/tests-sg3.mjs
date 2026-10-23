@@ -182,11 +182,31 @@ export const SG3_TESTS = {
     // the rejected probes must also leave the private event unchanged, observed through its operator (SG2V1-RUNNER-SIDE-EFFECT)
     await expectRefusal(ctx.host, P.id, ctx.creds.operator.E_private, () => http("GET", `${ctx.host.base}/ilp/v1/events/${P.id}/feed?since=0`), "NOT_FOUND", "private event feed");
     await expectRefusal(ctx.host, P.id, ctx.creds.operator.E_private, () => http("GET", `${ctx.host.base}/ilp/v1/events/${P.id}/receipts`), "NOT_FOUND", "private event receipts");
-    await expectRefusal(ctx.host, P.id, ctx.creds.operator.E_private, () => http("POST", `${ctx.host.base}/ilp/v1/events/${P.id}/join-requests`, { body: {} }), "NOT_FOUND", "join to a private event");
+    // F204-1 (directory211): the private-join probe is a STRUCTURALLY VALID envelope, so the refusal isolates visibility
+    // (R-CORE-29 step 2), not envelope shape (step 0). The claim is home-issued and home-signed for a fresh synthetic
+    // person never affiliated with E_private, audienced to this host and naming E_private; it is verified here first,
+    // so masking cannot hide a broken fixture. The same person's claim for an absent event must be refused identically.
+    const stranger = expectOk(await http("POST", `${ctx.home.base}/ilp/v1/admin/synthetic/humans`, { bearer: ctx.creds.provisioning, body: { display_name: `Unaffiliated ${ctx.tag}`, agent_display_name: `Agent unaffiliated ${ctx.tag}` } }), 201, "synthetic unaffiliated person");
+    const homeKeys = await discovery(ctx.home);
+    const mint = async (eventGid, what) => {
+      const claim = expectOk(await http("POST", `${ctx.home.base}/ilp/v1/claims`, { bearer: ctx.creds.provisioning, body: { purpose: "event_join", event: eventGid, aud: ctx.host.base, agent: stranger.agent.id, on_behalf_of: stranger.human } }), 201, what).claim;
+      const { payload } = verifyJws(claim, (kid) => homeKeys.keys.find((k) => k.kid === kid) ?? null, { typ: TYP.claim });
+      check(payload.sub === stranger.human && payload.aud === ctx.host.base && payload.event === eventGid && payload.purpose === "event_join", `${what}: claim does not bind the unaffiliated person, this host and the event`);
+      return claim;
+    };
+    const absent = { ref: `${ctx.tag}-absent-dir2`, global_id: `ilp:${hostOf(ctx.host.base)}:event:00000000-0000-7000-8000-${String(Date.now() % 1e12).padStart(12, "0")}` };
+    const doc = (r) => ({ status: r.status, contentType: r.contentType, body: Object.fromEntries(Object.entries(r.json ?? {}).filter(([k]) => k !== "instance")) });
+    const privJoin = await expectRefusal(ctx.host, P.id, ctx.creds.operator.E_private, async () => http("POST", `${ctx.host.base}/ilp/v1/events/${P.id}/join-requests`, { body: { claim: await mint(P.global_id, "claim for the private event") } }), "NOT_FOUND", "valid claim from an unaffiliated person to a private event");
+    const absJoin = await expectRefusal(ctx.host, P.id, ctx.creds.operator.E_private, async () => http("POST", `${ctx.host.base}/ilp/v1/events/${absent.ref}/join-requests`, { body: { claim: await mint(absent.global_id, "claim for an absent event") } }), "NOT_FOUND", "valid claim to an absent event");
+    check(JSON.stringify(doc(privJoin)) === JSON.stringify(doc(absJoin)), `private vs absent join refusals differ: ${JSON.stringify(doc(privJoin))} vs ${JSON.stringify(doc(absJoin))}`);
+    // malformed-envelope precedence (R-CORE-29 step 0, before any event lookup): identical VALIDATION_FAILED for private and absent
+    const badPriv = await expectRefusal(ctx.host, P.id, ctx.creds.operator.E_private, () => http("POST", `${ctx.host.base}/ilp/v1/events/${P.id}/join-requests`, { body: {} }), "VALIDATION_FAILED", "malformed join envelope to a private event");
+    const badAbs = await expectRefusal(ctx.host, P.id, ctx.creds.operator.E_private, () => http("POST", `${ctx.host.base}/ilp/v1/events/${absent.ref}/join-requests`, { body: {} }), "VALIDATION_FAILED", "malformed join envelope to an absent event");
+    check(JSON.stringify(doc(badPriv)) === JSON.stringify(doc(badAbs)), `private vs absent malformed-envelope refusals differ: ${JSON.stringify(doc(badPriv))} vs ${JSON.stringify(doc(badAbs))}`);
     // ...and IS visible to its own participant and its operator (R-CORE-24: visibility follows the event, not "nobody")
     expectOk(await http("GET", `${ctx.host.base}/ilp/v1/events/${P.id}/feed?since=0`, { bearer: ctx.privLocal.participant_token }), 200, "private feed to its own participant");
     expectOk(await http("GET", `${ctx.host.base}/ilp/v1/events/${P.id}/receipts`, { bearer: ctx.creds.operator.E_private }), 200, "private receipts to its operator");
-    return { hidden: hidden.length, private_probes: 5 };
+    return { hidden: hidden.length, private_probes: 8, valid_claim_private_vs_absent: "NOT_FOUND", malformed_private_vs_absent: "VALIDATION_FAILED" };
   },
   async "PC-DIR-3"(ctx) {
     const agg = expectOk(await http("GET", `${ctx.home.base}/ilp/v1/federation/events?scope=aggregated`), 200, "home aggregated directory");
