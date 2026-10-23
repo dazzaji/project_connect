@@ -8,6 +8,8 @@ import { decodeJws, JwsError, sha256Hex, TYP, verifyDetached, verifyJws } from "
 import { parseStrict } from "../lib/json.mjs";
 import { verifyReceiptChain } from "../lib/receipt.mjs";
 import { validate } from "../lib/schemas.mjs";
+import { coreManifest, coreProfile, coreResults, isCoreServiceTrust } from "./core-service.mjs";
+import { PROVENANCE_MODE, verifyExportProvenance } from "./export-provenance.mjs";
 
 const SKEW_S = 300;
 const fileSha = (p) => createHash("sha256").update(readFileSync(p)).digest("hex");
@@ -53,6 +55,13 @@ export function verifyPacket(packetDir, trust) {
     if (!cond) throw new Error(msg);
   };
   const P = (p) => join(packetDir, p);
+  // explicit, operator-selected core-service mode (trust.profile_mode); every other trust file keeps the historical checks
+  const core = isCoreServiceTrust(trust);
+  let manifest = null, qualification = null;
+  // opt-in B5 companion semantics (trust.export_provenance); without it exports are checked exactly as before
+  const provenance = trust?.export_provenance === PROVENANCE_MODE;
+  const provenanceResults = [];
+  let provenanceExports = null; // set when the exports guard reaches the opt-in companion checks (number of exports)
 
   // 1. envelope and content manifest
   let envelope, content, contentRoot;
@@ -100,6 +109,7 @@ export function verifyPacket(packetDir, trust) {
   // 3. profile pinned out of band
   let profile;
   guard("profile", () => {
+    if (core) return (profile = coreProfile(P, content, trust, parseStrict)).id;
     need(content.profile.sha256 === trust.profile_sha256, "profile hash differs from the trust pin");
     const pf = "profile/pc-0.1-s1.json";
     need(existsSync(P(pf)), "profile file missing");
@@ -125,6 +135,12 @@ export function verifyPacket(packetDir, trust) {
       subjects[s.label] = { ...s, disc };
     }
     return Object.keys(subjects).join(", ");
+  });
+
+  // 4b. (core-service mode) the operator-pinned job manifest; subjects are exactly its pair endpoints
+  if (core) guard("job-manifest", () => {
+    manifest = coreManifest(P, content, trust, parseStrict);
+    return `${manifest.pairs.length} pinned pairs × ${manifest.repetitions} repetitions`;
   });
 
   // 5. attestations over the content root: every subject and the runner
@@ -166,6 +182,12 @@ export function verifyPacket(packetDir, trust) {
   // 6. results: schema, coverage from the FROZEN profile, summary
   guard("results", () => {
     need(profile, "profile unavailable");
+    if (core) {
+      need(manifest, "job manifest unavailable");
+      const r = coreResults(P, profile, manifest, content);
+      qualification = r.qualification;
+      return r.detail;
+    }
     const rpath = "results/results.jsonl";
     need(existsSync(P(rpath)), "results missing");
     const results = readJsonl(readFileSync(P(rpath), "utf8"));
@@ -247,6 +269,20 @@ export function verifyPacket(packetDir, trust) {
         }
       }
       for (const c of readJsonl(readFileSync(P(`${d}/claims.jsonl`), "utf8"))) need(!JSON.stringify(c).includes("@"), `${d}: claims.jsonl carries an email-like value`);
+      if (provenance) {
+        provenanceExports = dirs.length;
+        try {
+          // the producer contract's prerequisite: the export manifest's signed LENGTH of every listed file (fix68 F3; the
+          // historical default guard checks hashes only and is unchanged)
+          for (const f of manifest.files) need(Number.isSafeInteger(f.bytes) && readFileSync(P(`${d}/${f.path}`)).length === f.bytes, `${f.path}: export-manifest length`);
+          const files = Object.fromEntries(manifest.files.map((f) => [f.path, readFileSync(P(`${d}/${f.path}`), "utf8")]));
+          // every file this export carries in the packet must be covered by its own manifest (fix68 F1)
+          const presentPaths = content.files.map((f) => f.path).filter((p) => p.startsWith(`${d}/`)).map((p) => p.slice(d.length + 1));
+          provenanceResults.push({ export: d, ...verifyExportProvenance({ manifest, files, presentPaths, keyFor: (kid) => host.keys.find((k) => k.kid === kid) ?? null }) });
+        } catch (e) {
+          throw new Error(`${d}: export provenance (${PROVENANCE_MODE}): ${e.message}`);
+        }
+      }
     }
     return `${dirs.length} exports, ${receiptsChecked} receipts, ${linksChecked} grant links`;
   });
@@ -264,7 +300,15 @@ export function verifyPacket(packetDir, trust) {
 
   function finish() {
     const ok = checks.length > 0 && checks.every((c) => c.ok);
-    return { ok, content_root: contentRoot ?? null, checks };
+    // explicit statement whether B5 companion semantics were checked (never implied by an integrity PASS)
+    // requested ≠ checked: `checked` is true only when every export's companion checks completed successfully
+    const completed = provenance && provenanceExports !== null && provenanceResults.length === provenanceExports;
+    const export_provenance = !provenance ? { requested: false, checked: false, reason: "not requested: legacy export checks only (not B5-complete)" }
+      : completed ? { requested: true, checked: true, version: PROVENANCE_MODE, exports: provenanceResults }
+      : { requested: true, checked: false, version: PROVENANCE_MODE, reason: provenanceExports === null ? "not reached: the packet failed before the export checks" : "failed: see the exports check", exports: provenanceResults };
+    if (!core) return { ok, content_root: contentRoot ?? null, checks, export_provenance };
+    // core-service mode: profile qualification is reported only for a verified packet, and never as a certification
+    return { ok, content_root: contentRoot ?? null, checks, export_provenance, profile_mode: trust.profile_mode, qualification: ok ? qualification : { scope: "not_verified" } };
   }
 }
 

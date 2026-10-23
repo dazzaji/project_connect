@@ -4,6 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { b64u, decodeJws, generateKey, signJws, TYP, verifyJws } from "../lib/jws.mjs";
+import { canonicalize } from "../lib/jcs.mjs";
 import { verifyReceiptChain } from "../lib/receipt.mjs";
 import { validate } from "../lib/schemas.mjs";
 import { check, expectNoSideEffects, expectOk, expectProblem, expectRefusal, http, isProblemMediaType, observe, PC_ROOT, seenProblems, sleep } from "./lib.mjs";
@@ -21,7 +22,7 @@ const discovery = async (node) => expectOk(await http("GET", `${node.base}/.well
 async function admit(ctx, ev, { hostNode = ctx.host, operator = ctx.creds.operator[ev.key], label = "s" } = {}) {
   const { home } = ctx;
   const syn = expectOk(await http("POST", `${home.base}/ilp/v1/admin/synthetic/humans`, { bearer: ctx.creds.provisioning, body: { display_name: `Synthetic ${label} ${ctx.tag}`, agent_display_name: `Agent ${label} ${ctx.tag}` } }), 201, `synthetic ${label}`);
-  const claim = expectOk(await http("POST", `${home.base}/ilp/v1/claims`, { bearer: ctx.creds.provisioning, body: { purpose: "event_join", event: ev.global_id, aud: hostNode.base, agent: syn.agent.id, on_behalf_of: syn.human } }), 201, `claim ${label}`).claim;
+  const claim = expectOk(await http("POST", `${home.base}/ilp/v1/claims`, { bearer: ctx.creds.provisioning, body: { purpose: "event_join", event: ev.global_id, aud: hostNode.base, agent: syn.agent.id, on_behalf_of: syn.human, ...(ev.consent ? { consent_accepted: { kind: ev.consent.kind, text_version: ev.consent.text_version, text_sha256: ev.consent.text_sha256 } } : {}) } }), 201, `claim ${label}`).claim;
   const j = expectOk(await http("POST", `${hostNode.base}/ilp/v1/events/${ev.id}/join-requests`, { body: { claim } }), 202, `join ${label}`);
   expectOk(await http("POST", `${hostNode.base}/ilp/v1/events/${ev.id}/join-requests/${local(j.join_request_id)}/approve`, { bearer: operator, body: {} }), 200, `approve ${label}`);
   const st = expectOk(await http("GET", `${hostNode.base}/ilp/v1/events/${ev.id}/join-requests/${local(j.join_request_id)}`, { bearer: j.retrieval_key }), 200, `retrieve ${label}`);
@@ -188,25 +189,54 @@ export const SG3_TESTS = {
     // so masking cannot hide a broken fixture. The same person's claim for an absent event must be refused identically.
     const stranger = expectOk(await http("POST", `${ctx.home.base}/ilp/v1/admin/synthetic/humans`, { bearer: ctx.creds.provisioning, body: { display_name: `Unaffiliated ${ctx.tag}`, agent_display_name: `Agent unaffiliated ${ctx.tag}` } }), 201, "synthetic unaffiliated person");
     const homeKeys = await discovery(ctx.home);
+    // SG2R14-DIR2-CLAIM-VALIDITY (repair233): beyond the signature, the claim must satisfy the strict (closed) identity-claim
+    // schema, be issued by THIS home for the requested person and agent, and be valid now (iat not in the future, exp in the
+    // future, lifetime within the profile's claim_ttl_max_s, both with the profile clock skew). Host-side precedence is
+    // unchanged: these are runner checks on the fixture before it is sent.
+    const { clock_skew_s: skew, claim_ttl_max_s: ttlMax } = ctx.profile.parameters;
+    check(Number.isInteger(skew) && Number.isInteger(ttlMax), "profile clock_skew_s / claim_ttl_max_s required");
+    const jtis = [];
     const mint = async (eventGid, what) => {
       const claim = expectOk(await http("POST", `${ctx.home.base}/ilp/v1/claims`, { bearer: ctx.creds.provisioning, body: { purpose: "event_join", event: eventGid, aud: ctx.host.base, agent: stranger.agent.id, on_behalf_of: stranger.human } }), 201, what).claim;
       const { payload } = verifyJws(claim, (kid) => homeKeys.keys.find((k) => k.kid === kid) ?? null, { typ: TYP.claim });
+      schemaOk("identity-claim", payload, `${what}: identity claim`);
+      check(payload.iss === ctx.home.base, `${what}: claim not issued by this home (${payload.iss})`);
       check(payload.sub === stranger.human && payload.aud === ctx.host.base && payload.event === eventGid && payload.purpose === "event_join", `${what}: claim does not bind the unaffiliated person, this host and the event`);
-      return claim;
+      check(payload.agent?.id === stranger.agent.id && (stranger.agent.license_plate === undefined || payload.agent.license_plate === stranger.agent.license_plate), `${what}: claim does not bind the requested agent`);
+      const now = Math.floor(Date.now() / 1000);
+      check(payload.iat <= now + skew && payload.exp > now - skew && payload.exp > payload.iat && payload.exp - payload.iat <= ttlMax, `${what}: claim not currently valid (iat ${payload.iat}, exp ${payload.exp}, now ${now})`);
+      jtis.push(payload.jti);
+      return { claim, payload };
     };
     const absent = { ref: `${ctx.tag}-absent-dir2`, global_id: `ilp:${hostOf(ctx.host.base)}:event:00000000-0000-7000-8000-${String(Date.now() % 1e12).padStart(12, "0")}` };
-    const doc = (r) => ({ status: r.status, contentType: r.contentType, body: Object.fromEntries(Object.entries(r.json ?? {}).filter(([k]) => k !== "instance")) });
-    const privJoin = await expectRefusal(ctx.host, P.id, ctx.creds.operator.E_private, async () => http("POST", `${ctx.host.base}/ilp/v1/events/${P.id}/join-requests`, { body: { claim: await mint(P.global_id, "claim for the private event") } }), "NOT_FOUND", "valid claim from an unaffiliated person to a private event");
-    const absJoin = await expectRefusal(ctx.host, P.id, ctx.creds.operator.E_private, async () => http("POST", `${ctx.host.base}/ilp/v1/events/${absent.ref}/join-requests`, { body: { claim: await mint(absent.global_id, "claim for an absent event") } }), "NOT_FOUND", "valid claim to an absent event");
-    check(JSON.stringify(doc(privJoin)) === JSON.stringify(doc(absJoin)), `private vs absent join refusals differ: ${JSON.stringify(doc(privJoin))} vs ${JSON.stringify(doc(absJoin))}`);
+    // SG2R14-DIR2-EQUIVALENCE (repair233): substantive privacy equivalence on canonical JSON (JCS) and normalized media
+    // semantics (essence and parameter names case-insensitive, charset value case-insensitive). The ONLY normalization is
+    // documented and narrow: a host may echo the caller's own request reference (the path segment it sent) in the
+    // problem's request-derived members `detail` and `instance`; exactly that string (raw or URL-encoded) is replaced by a
+    // placeholder there. No member is dropped and every other byte of every member is compared.
+    const media = (ct) => { const [essence, ...params] = String(ct ?? "").split(";").map((x) => x.trim()); return [essence.toLowerCase(), ...params.filter(Boolean).map((p) => { const i = p.indexOf("="); const k = p.slice(0, i).trim().toLowerCase(); const v = p.slice(i + 1).trim().replace(/^"(.*)"$/, "$1"); return `${k}=${k === "charset" ? v.toLowerCase() : v}`; }).sort()].join(";"); };
+    const doc = (r, ref) => {
+      const body = { ...(r.json ?? {}) };
+      for (const k of ["detail", "instance"]) if (typeof body[k] === "string") for (const form of [ref, encodeURIComponent(ref)]) body[k] = body[k].split(form).join("<requested-ref>");
+      return canonicalize({ status: r.status, media: media(r.contentType), body });
+    };
+    const privJoin = await expectRefusal(ctx.host, P.id, ctx.creds.operator.E_private, async () => http("POST", `${ctx.host.base}/ilp/v1/events/${P.id}/join-requests`, { body: { claim: (await mint(P.global_id, "claim for the private event")).claim } }), "NOT_FOUND", "valid claim from an unaffiliated person to a private event");
+    const absJoin = await expectRefusal(ctx.host, P.id, ctx.creds.operator.E_private, async () => http("POST", `${ctx.host.base}/ilp/v1/events/${absent.ref}/join-requests`, { body: { claim: (await mint(absent.global_id, "claim for an absent event")).claim } }), "NOT_FOUND", "valid claim to an absent event");
+    check(doc(privJoin, P.id) === doc(absJoin, absent.ref), `private vs absent join refusals differ: ${doc(privJoin, P.id)} vs ${doc(absJoin, absent.ref)}`);
+    // positive admission discriminator (repair233): the SAME minting path, a distinct claim (own jti), on a VISIBLE federated
+    // event (E2) is accepted for admission (202), so the NOT_FOUND above is visibility, not a broken claim
+    const visible = await mint(ctx.events.E2.global_id, "claim for a visible event");
+    check(jtis.length === 3 && new Set(jtis).size === 3, "the private, absent and visible claims must each have their own jti");
+    const admitted = expectOk(await http("POST", `${ctx.host.base}/ilp/v1/events/${ctx.events.E2.id}/join-requests`, { body: { claim: visible.claim } }), 202, "valid claim admitted on a visible event");
+    check(typeof admitted.join_request_id === "string" && admitted.join_request_id.length > 0, "visible-event admission lacks a join request id");
     // malformed-envelope precedence (R-CORE-29 step 0, before any event lookup): identical VALIDATION_FAILED for private and absent
     const badPriv = await expectRefusal(ctx.host, P.id, ctx.creds.operator.E_private, () => http("POST", `${ctx.host.base}/ilp/v1/events/${P.id}/join-requests`, { body: {} }), "VALIDATION_FAILED", "malformed join envelope to a private event");
     const badAbs = await expectRefusal(ctx.host, P.id, ctx.creds.operator.E_private, () => http("POST", `${ctx.host.base}/ilp/v1/events/${absent.ref}/join-requests`, { body: {} }), "VALIDATION_FAILED", "malformed join envelope to an absent event");
-    check(JSON.stringify(doc(badPriv)) === JSON.stringify(doc(badAbs)), `private vs absent malformed-envelope refusals differ: ${JSON.stringify(doc(badPriv))} vs ${JSON.stringify(doc(badAbs))}`);
+    check(doc(badPriv, P.id) === doc(badAbs, absent.ref), `private vs absent malformed-envelope refusals differ: ${doc(badPriv, P.id)} vs ${doc(badAbs, absent.ref)}`);
     // ...and IS visible to its own participant and its operator (R-CORE-24: visibility follows the event, not "nobody")
     expectOk(await http("GET", `${ctx.host.base}/ilp/v1/events/${P.id}/feed?since=0`, { bearer: ctx.privLocal.participant_token }), 200, "private feed to its own participant");
     expectOk(await http("GET", `${ctx.host.base}/ilp/v1/events/${P.id}/receipts`, { bearer: ctx.creds.operator.E_private }), 200, "private receipts to its operator");
-    return { hidden: hidden.length, private_probes: 8, valid_claim_private_vs_absent: "NOT_FOUND", malformed_private_vs_absent: "VALIDATION_FAILED" };
+    return { hidden: hidden.length, private_probes: 8, valid_claim_private_vs_absent: "NOT_FOUND", malformed_private_vs_absent: "VALIDATION_FAILED", visible_admission: 202 };
   },
   async "PC-DIR-3"(ctx) {
     const agg = expectOk(await http("GET", `${ctx.home.base}/ilp/v1/federation/events?scope=aggregated`), 200, "home aggregated directory");
@@ -493,7 +523,8 @@ export const SG3_TESTS = {
         check(r.status !== 0 && r.status !== null, "reference node started without a key");
         out[node.name] = { refused: true };
       } else {
-        const d = expectOk(await http("POST", `${ctx.harness}/ops/key-drill`, { body: { node: node.name } }), 200, "key drill");
+        // the target's own control client (carries its control token, if any) when the service runner provides one
+        const d = expectOk(node.harnessControl ? await node.harnessControl("/ops/key-drill", { node: node.name }) : await http("POST", `${ctx.harness}/ops/key-drill`, { body: { node: node.name } }), 200, "key drill");
         check(d.refused, `${node.name} started in production mode without a key`);
         check(d.dev_with_key_unchanged, `${node.name} replaced an existing key in development mode`);
         out[node.name] = d;

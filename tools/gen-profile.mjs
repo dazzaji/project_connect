@@ -192,3 +192,76 @@ writeFileSync(join(OUT, "pc-0.1-s1.json"), json);
 const hash = sha256Hex(canonicalBytes(profile));
 writeFileSync(join(OUT, "pc-0.1-s1.sha256"), `${hash}  pc-0.1-s1.json (JCS)\n`);
 console.log(`profile pc-0.1-s1: ${tests.length} tests, JCS sha256 ${hash}`);
+
+// Draft core-service profile (S4C profile46): the same normative content as pc-0.1-s1, derived from it, with scenarios bound to
+// an operator-pinned job manifest instead of fixed nodes. pc-0.1-s1 above is unchanged.
+const coreProfile = {};
+for (const [k, v] of Object.entries(profile)) if (k !== "scenarios" && k !== "nodes") coreProfile[k] = v;
+Object.assign(coreProfile, {
+  id: "pc-core-service-0.1",
+  status: "draft",
+  title: "Project Connect core service — arbitrary registered pairs (draft)",
+  claim_label: "draft — evidence profile, not a certification award",
+  version: "0.1.0",
+  derived_from: { id: "pc-0.1-s1", sha256: hash, $comment: "same normative tests, traces, parameters and exclusions; only the scenario binding differs. pc-0.1-s1 is unchanged." },
+  scenario_binding: "job-pairs",
+  ...{
+  "pair_template": {
+    "$comment": "Scenarios are the pairs of an operator-pinned job manifest (format pc-job-manifest/1), never fixed node names. Each pair runs every selected test for repetitions 1..N.",
+    "roles": [
+      "home",
+      "host"
+    ],
+    "repetitions_min": 1,
+    "result_scenario": "<home descriptor id>:<host descriptor id>"
+  },
+  "applicability": {
+    "$comment": "The only permitted not_applicable rows. kind=not_applicable: the test does not apply (full qualification still possible). kind=unsupported: the evidence is partial (never full-profile). Evaluated by the verifier from the pinned job manifest, never from runner output.",
+    "rules": [
+      {
+        "test": "PC-DISC-5",
+        "when": "capability_absent",
+        "capability": "key-drill",
+        "kind": "unsupported"
+      },
+      {
+        "test": "PC-REV-4",
+        "when": "capability_absent",
+        "capability": "outage-drill",
+        "kind": "unsupported"
+      },
+      {
+        "test": "PC-REV-5",
+        "when": "capability_absent",
+        "capability": "outage-drill",
+        "kind": "unsupported"
+      },
+      {
+        "test": "PC-PROV-1",
+        "when": "home_implementation",
+        "implementation": "project-connect-reference-node",
+        "kind": "not_applicable"
+      },
+      {
+        "test": "PC-INTEROP-AB",
+        "when": "same_implementation",
+        "kind": "not_applicable",
+        "$comment": "applies to a pair whose pinned home and host implementations differ: the golden thread passes home→host"
+      },
+      {
+        "test": "PC-INTEROP-BA",
+        "when": "same_implementation_or_reverse_unpinned",
+        "kind": "not_applicable",
+        "$comment": "applies when implementations differ AND the reverse pair is pinned: the golden thread passes host→home in the same repetition"
+      }
+    ]
+  },
+  "qualification": {
+    "full_profile": "every profile test selected, every pair/repetition row present exactly once, no fail, not_applicable only by a rule of kind not_applicable, packet verified against operator trust pins",
+    "partial": "anything else, including unsupported capabilities",
+    "certification": "none: a separate record issued by a policy owner (docs/core-service-profile.md)"
+  }
+},
+});
+writeFileSync(join(OUT, "pc-core-service-0.1.json"), JSON.stringify(coreProfile, null, 2) + "\n");
+console.log(`profile pc-core-service-0.1 (draft 0.1.0): JCS sha256 ${sha256Hex(canonicalBytes(coreProfile))}`);

@@ -1,0 +1,36 @@
+[
+  {
+    "id": "ref-a",
+    "implementation": "project-connect-reference-node",
+    "version": "0.0.2",
+    "base_url": "http://ref-a.localhost:4404",
+    "roles": [
+      "home",
+      "host"
+    ],
+    "setup": {
+      "kind": "reference-admin-v1"
+    },
+    "capabilities": [],
+    "credentials_ref": "ref-a.json"
+  },
+  {
+    "id": "beta-one",
+    "implementation": "interlateral-platform-beta",
+    "version": "x.y",
+    "base_url": "http://beta-one.localhost:4101",
+    "roles": [
+      "home",
+      "host"
+    ],
+    "setup": {
+      "kind": "harness-control-v1",
+      "control_url": "http://127.0.0.1:4180",
+      "node": "beta-one"
+    },
+    "capabilities": [
+      "outage-drill",
+      "key-drill"
+    ]
+  }
+]

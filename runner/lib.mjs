@@ -157,14 +157,18 @@ export async function expectNoSideEffects(node, eventRef, before, what, bearer =
 
 // ---- the runner's own reference nodes (runner-as-node, R-CONF-3) ----
 // `baseUrl`/`listenPort`: a node may declare one origin (e.g. a runner-owned proxy in front of it) while listening elsewhere
-export async function startReferenceNode({ name, port, work, bound = 60, baseUrl = null, listenPort = null }) {
+// `detached: false` keeps the node in the caller's process group (the service runner: a supervisor that terminates the
+// runner's group then also reaches the runner's own nodes)
+// `host` (optional): the listen address passed as --host. Unset keeps the reference node's own default (historical callers);
+// the service runner and its fixtures pass loopback explicitly (unit57)
+export async function startReferenceNode({ name, port, work, bound = 60, baseUrl = null, listenPort = null, detached = true, host = null }) {
   const dir = join(work, name);
   mkdirSync(dir, { recursive: true });
   const admin = randomBytes(24).toString("base64url");
   writeFileSync(join(dir, "admin.token"), admin, { mode: 0o600 });
   const base = baseUrl ?? `http://${name}.localhost:${port}`;
   const lp = listenPort ?? port;
-  const child = spawn(process.execPath, [join(PC_ROOT, "reference-node", "main.mjs"), "--base-url", base, "--port", String(lp), "--key-file", join(dir, "key.json"), "--admin-token-file", join(dir, "admin.token"), "--dev", "--bound", String(bound)], { stdio: ["ignore", "ignore", "pipe"], detached: true });
+  const child = spawn(process.execPath, [join(PC_ROOT, "reference-node", "main.mjs"), "--base-url", base, "--port", String(lp), "--key-file", join(dir, "key.json"), "--admin-token-file", join(dir, "admin.token"), "--dev", "--bound", String(bound), ...(host ? ["--host", host] : [])], { stdio: ["ignore", "ignore", "pipe"], detached });
   child.stderr.on("data", (d) => writeFileSync(join(dir, "node.log"), d, { flag: "a" }));
   for (let i = 0; i < 100; i++) {
     try {
@@ -179,7 +183,8 @@ export async function startReferenceNode({ name, port, work, bound = 60, baseUrl
     throw new Error(`reference node ${name} did not start on port ${port} (port in use?) — see ${join(dir, "node.log")}`);
   }
   const key = kf.keys.find((k) => k.kid === kf.active_kid);
-  return { name, base, kind: "ref", admin, key, child, stop: () => { try { process.kill(-child.pid, "SIGTERM"); } catch {} } };
+  const exited = new Promise((r) => (child.exitCode !== null || child.signalCode !== null ? r() : child.once("exit", () => r())));
+  return { name, base, kind: "ref", admin, key, child, exited, stop: () => { try { if (detached) process.kill(-child.pid, "SIGTERM"); else child.kill("SIGTERM"); } catch {} } };
 }
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

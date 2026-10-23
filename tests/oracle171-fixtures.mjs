@@ -5,8 +5,13 @@ import {root,lib,transport,feed,receipt,join} from './oracle140-fixtures.mjs';
 export {root,lib,feed,receipt,join};
 const {SG3_TESTS}=await import(pathToFileURL(root+'/runner/tests-sg3.mjs'));
 const {TESTS}=await import(pathToFileURL(root+'/runner/tests.mjs'));
-const {generateKey}=await import(pathToFileURL(root+'/lib/jws.mjs'));
+const {generateKey,signJws,TYP}=await import(pathToFileURL(root+'/lib/jws.mjs'));
 const key=generateKey('oracle171').privateJwk;
+// repair233: PC-DIR-2 now verifies the home's signed claim (schema, issuer, person, agent, time) and requires a 202 visible-
+// event admission, so the fixture home has a genuine generated key, a discovery document and schema-valid signed claims.
+const homeKey=generateKey('oracle171-home');
+const HOME='http://home.invalid';
+const stranger={human:'ilp:home.invalid:human:00000000-0000-7000-8000-0000000d1r02',agent:{id:'ilp:home.invalid:agent:00000000-0000-7000-8000-0000000a9e02',display_name:'Agent unaffiliated',license_plate:'IL-DIRTWOAB'}};
 const row=n=>({...join(),join_request_id:`ilp:synthetic.localhost:join_request:j${n}`});
 const fresh=()=>({feed:{items:[feed()],next_cursor:1,latest_seq:1},receipts:{items:[receipt()],next_cursor:null},joins:{items:[row(1),row(2)],next_cursor:null}});
 const ok=json=>({status:200,json});
@@ -14,7 +19,7 @@ const problem=code=>({status:lib.registeredStatus(code),json:{type:'urn:ilp:erro
 export async function caller(id,{side=-1,mutation='status',numeric=false}={}){
  const host={name:'synthetic',base:'http://synthetic.invalid'};
  const events={E1:{id:'e1',global_id:'ilp:synthetic.localhost:event:e1'},E2:{id:'e2',global_id:'ilp:synthetic.localhost:event:e2'},E_private:{id:'private',global_id:'ilp:synthetic.localhost:event:private'},E_nonfed:{global_id:'ilp:synthetic.localhost:event:nonfed'}};
- const ctx={host,home:{base:'http://home.invalid'},aux:{base:'http://aux.invalid',key},tag:'oracle171',events,
+ const ctx={host,home:{base:HOME},profile:{parameters:{clock_skew_s:300,claim_ttl_max_s:86400}},aux:{base:'http://aux.invalid',key},tag:'oracle171',events,
   creds:{operator:{E1:'op',E2:'op',E_private:'op'},provisioning:'prov',peering:{synthetic:'peer'}},
   privLocal:{participant_token:'local'},subject:{human:'ilp:home.invalid:human:h',agent:{id:'ilp:home.invalid:agent:a'}},
   token:'remote',grantPayload:{status:{uri:host.base+'/status'}},claim:'replayed',auxEvent:{global_id:'ilp:aux.invalid:event:aux'}};
@@ -30,6 +35,11 @@ export async function caller(id,{side=-1,mutation='status',numeric=false}={}){
  }
  return transport(async(method,u,o)=>{
   const p=u.pathname,e=p.split('/')[4];
+  if(id==='PC-DIR-2'&&u.origin===HOME&&p==='/.well-known/interlateral.json')return ok({keys:[homeKey.publicJwk]});
+  if(id==='PC-DIR-2'&&u.origin===HOME&&p.endsWith('/admin/synthetic/humans'))return {status:201,json:{human:stranger.human,agent:stranger.agent}};
+  if(id==='PC-DIR-2'&&u.origin===HOME&&p.endsWith('/claims')){claims++;const b=JSON.parse(o.body??'{}'),iat=Math.floor(Date.now()/1000);
+   return {status:201,json:{claim:signJws({iss:HOME,sub:b.on_behalf_of,aud:b.aud,iat,exp:iat+600,jti:`oracle171-dir2-claim-${claims}`,display_name:'Unaffiliated',verified:true,verified_method:'synthetic',agent:stranger.agent,purpose:'event_join',event:b.event,consent_accepted:null},homeKey.privateJwk,TYP.claim)}};}
+  if(id==='PC-DIR-2'&&method==='POST'&&p==='/ilp/v1/events/e2/join-requests')return {status:202,json:{join_request_id:'ilp:synthetic.localhost:join_request:visible',retrieval_key:'r'}};
   if(p.endsWith('/claims')){claims++;return {status:201,json:{claim:'e30.'+Buffer.from(JSON.stringify({display_name:'Synthetic',n:claims})).toString('base64url')+'.eA'}};}
   if(p.endsWith('/admin/synthetic/humans'))return {status:201,json:{human:'ilp:home.invalid:human:race'}};
   if(p.endsWith('/suspend')){state('e1').receipts.items.push(receipt(2));state('e2').receipts.items.push(receipt(2));return ok({});}
@@ -43,8 +53,12 @@ export async function caller(id,{side=-1,mutation='status',numeric=false}={}){
   if(refusal){
    const index=n++;
    if(id==='PC-IDC-3'&&index>=5){if(index===5){state(e).joins.items.push(row(100));return {status:202,json:{join_request_id:row(100).join_request_id}};}return problem('CLAIM_REPLAYED');}
-   if(index===side)effect(state(e));
+   // repair233: every PC-DIR-2 refusal is observed through the private event (expectRefusal on E_private), including the
+   // absent-event requests, so a position's side effect is applied to the observed private event
+   if(index===side)effect(state(id==='PC-DIR-2'?'private':e));
    const codes=id==='PC-IDC-3'?['CLAIM_REPLAYED','CLAIM_AUDIENCE_MISMATCH','CLAIM_EXPIRED','SIGNATURE_INVALID','SIGNATURE_INVALID']:id==='PC-CORE-3'?['SIGNATURE_INVALID','SIGNATURE_INVALID','UNKNOWN_SIGNER']:null;
+   // repair233: R-CORE-29 step 0 before step 2 — a PC-DIR-2 join without a string claim is VALIDATION_FAILED (private or absent)
+   if(id==='PC-DIR-2'&&method==='POST'&&typeof JSON.parse(o.body??'{}').claim!=='string')return problem('VALIDATION_FAILED');
    return problem(codes?codes[index]:id==='PC-PEER-2'?'NOT_A_PEER':id==='PC-REV-3'?'PEER_SUSPENDED':'NOT_FOUND');
   }
   assert(kind,'unhandled fixture request '+p);

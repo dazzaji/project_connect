@@ -1,0 +1,14 @@
+{
+  "profile": "pc-0.1-s1",
+  "gate": "SG-2",
+  "pairs": [
+    {
+      "home": "ref-a",
+      "host": "beta-one"
+    }
+  ],
+  "reps": 2,
+  "also": [
+    "PC-DISC-5"
+  ]
+}

@@ -35,9 +35,12 @@ function walk(root) {
  *                  exports: [{name, manifest, files}], runnerBuild, attest: async (label, contentRoot) => jws })
  * Returns { dir, contentRoot, trust }.
  */
-export async function assemblePacket({ dir, runId, profile, profileRaw, results, subjects, exports, runnerBuild, attest }) {
+// Optional (core-service profile only; defaults keep the historical packet byte layout): `profilePath`, and `jobManifest`
+// { path, text, sha256 } — the operator-pinned job manifest, written into the packet and referenced as content.x_job_manifest.
+export async function assemblePacket({ dir, runId, profile, profileRaw, results, subjects, exports, runnerBuild, attest, profilePath = "profile/pc-0.1-s1.json", jobManifest = null }) {
   mkdirSync(dir, { recursive: true });
-  write(dir, "profile/pc-0.1-s1.json", profileRaw);
+  write(dir, profilePath, profileRaw);
+  if (jobManifest) write(dir, jobManifest.path, jobManifest.text);
   write(dir, "results/results.jsonl", results.map((r) => JSON.stringify(r)).join("\n") + "\n");
   for (const s of subjects) {
     write(dir, `subjects/${s.label}/discovery.json`, JSON.stringify(s.discovery, null, 2) + "\n");
@@ -58,6 +61,7 @@ export async function assemblePacket({ dir, runId, profile, profileRaw, results,
       deployment_id: s.discovery.instance.deployment_id, discovery_sha256: sha256Hex(canonicalBytes(s.discovery)), keys: s.discovery.keys,
     })),
     runner: { id: "runner:project-connect", build: runnerBuild },
+    ...(jobManifest ? { x_job_manifest: { path: jobManifest.path, sha256: jobManifest.sha256 } } : {}),
     files,
     summary: {
       tests: results.length,

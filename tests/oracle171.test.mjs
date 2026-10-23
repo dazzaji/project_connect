@@ -33,6 +33,16 @@ test("171 PC-DIR-2 refusal 1 rejects late-insert",()=>assert.rejects(caller("PC-
 test("171 PC-DIR-2 refusal 2 rejects status",()=>assert.rejects(caller("PC-DIR-2",{side:2,mutation:"status"}),admissionError));
 test("171 PC-DIR-2 refusal 2 rejects late-status",()=>assert.rejects(caller("PC-DIR-2",{side:2,mutation:"late-status"}),admissionError));
 test("171 PC-DIR-2 refusal 2 rejects late-insert",()=>assert.rejects(caller("PC-DIR-2",{side:2,mutation:"late-insert"}),admissionError));
+// repair233: PC-DIR-2 has six refusals (feed, receipts, private join, absent join, malformed private, malformed absent); positions 3-5 now covered too
+test("233 PC-DIR-2 refusal 3 rejects status",()=>assert.rejects(caller("PC-DIR-2",{side:3,mutation:"status"}),admissionError));
+test("233 PC-DIR-2 refusal 3 rejects late-status",()=>assert.rejects(caller("PC-DIR-2",{side:3,mutation:"late-status"}),admissionError));
+test("233 PC-DIR-2 refusal 3 rejects late-insert",()=>assert.rejects(caller("PC-DIR-2",{side:3,mutation:"late-insert"}),admissionError));
+test("233 PC-DIR-2 refusal 4 rejects status",()=>assert.rejects(caller("PC-DIR-2",{side:4,mutation:"status"}),admissionError));
+test("233 PC-DIR-2 refusal 4 rejects late-status",()=>assert.rejects(caller("PC-DIR-2",{side:4,mutation:"late-status"}),admissionError));
+test("233 PC-DIR-2 refusal 4 rejects late-insert",()=>assert.rejects(caller("PC-DIR-2",{side:4,mutation:"late-insert"}),admissionError));
+test("233 PC-DIR-2 refusal 5 rejects status",()=>assert.rejects(caller("PC-DIR-2",{side:5,mutation:"status"}),admissionError));
+test("233 PC-DIR-2 refusal 5 rejects late-status",()=>assert.rejects(caller("PC-DIR-2",{side:5,mutation:"late-status"}),admissionError));
+test("233 PC-DIR-2 refusal 5 rejects late-insert",()=>assert.rejects(caller("PC-DIR-2",{side:5,mutation:"late-insert"}),admissionError));
 test("171 PC-REV-3 stable complete admissions and intentional transitions pass",()=>caller("PC-REV-3"));
 test("171 PC-REV-3 Beta numeric feed envelope passes",()=>caller("PC-REV-3",{numeric:true}));
 test("171 PC-REV-3 identical malformed admissions fail",()=>assert.rejects(caller("PC-REV-3",{mutation:'malformed'}),admissionError));
