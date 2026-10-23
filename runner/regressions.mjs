@@ -88,11 +88,18 @@ const PROBES = {
     expectProblem(await http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests`, { body: { claim: c } }), "VALIDATION_FAILED", "verified: 'yes'");
     return { rejected: true };
   },
-  // an oversized per-action payload is reported at step 0, before credentials (ASTRA-R2-09, ruled FINDING_STANDS)
+  // an oversized per-action payload is reported at step 0, before credentials (ASTRA-R2-09, ruled FINDING_STANDS), and has
+  // no effect: the event's public feed/receipts and its operator-visible admission state are unchanged (oracle122)
   async "ASTRA-R2-09"(host) {
     const ev = await host.createEvent({ slug: `reg-r09-${Date.now().toString(36)}` });
+    const op = await host.credential("operator", ev.id);
+    const before = await observe(host, ev.id);
+    const joinsBefore = await joinState(host, ev.id, op);
     expectProblem(await http("POST", `${host.base}/ilp/v1/events/${ev.id}/actions`, { body: { kind: "unconference.proposal", payload: { title: "big", content: "x".repeat(40000) } } }), "PAYLOAD_TOO_LARGE", "unauthenticated oversized payload");
-    return { reported: "PAYLOAD_TOO_LARGE" };
+    await expectNoSideEffects(host, ev.id, before, "oversized payload");
+    const joinsAfter = await joinState(host, ev.id, op);
+    check(JSON.stringify(joinsAfter) === JSON.stringify(joinsBefore), `oversized payload: admission state changed ${JSON.stringify(joinsBefore)} → ${JSON.stringify(joinsAfter)}`);
+    return { reported: "PAYLOAD_TOO_LARGE", unchanged: before };
   },
   // a local token on another event with a presented grant: 4a is reported, not an unknown credential (SG2R2-LOCAL-4A / ENF3-GREEN)
   async "SG2R2-LOCAL-4A"(host) {
@@ -135,8 +142,12 @@ const PROBES = {
     const cookie = { cookie: "il_session=ils_" + "A".repeat(43) };
     const a = await http("GET", `${host.base}/ilp/v1/events/${priv.id}/join-requests`, { headers: cookie });
     const b = await http("GET", `${host.base}/ilp/v1/events/${nil}/join-requests`, { headers: cookie });
-    check(a.status === b.status && a.json?.title === b.json?.title && [401].includes(a.status), `invalid session: private ${a.status} ${a.json?.title} vs absent ${b.status} ${b.json?.title}`);
-    return { unauthenticated: "AUTH_MISSING", invalid_bearer: "AUTH_INVALID", invalid_session: a.json?.title };
+    // each answer is a complete registered ILP problem envelope (oracle122: status, media type, schema, title), the
+    // credential step's code, and identical for the private and the absent event (no existence oracle)
+    expectProblem(a, ["AUTH_INVALID", "AUTH_MISSING"], "invalid session, private event");
+    expectProblem(b, ["AUTH_INVALID", "AUTH_MISSING"], "invalid session, no such event");
+    check(a.json.title === b.json.title && a.status === b.status, `invalid session: private ${a.status} ${a.json.title} vs absent ${b.status} ${b.json.title}`);
+    return { unauthenticated: "AUTH_MISSING", invalid_bearer: "AUTH_INVALID", invalid_session: a.json.title };
   },
   // an empty ILP-Grant header is a presented grant: rejected at 4a, never replaced by the stored grant (ASTRA-R3-01)
   async "ASTRA-R3-01"(host) {
