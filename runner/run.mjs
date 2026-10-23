@@ -196,4 +196,6 @@ const failed = results.filter((r) => r.status === "fail").length + postPacket.fi
 console.log(`\n${results.length} results, ${results.filter((r) => r.status === "pass").length} pass, ${failed} fail, ${results.filter((r) => r.status === "not_applicable").length} n/a — ${out}`);
 pcRef.stop();
 pcAux.stop();
-process.exit(failed ? 1 : 0);
+// a run that produced no results proves nothing: fail, never exit 0 (L-R5-1, zero-test matrix)
+if (!results.length) console.error("no matrix results were produced (empty scenario/test selection): failing the run");
+process.exit(failed || !results.length ? 1 : 0);
