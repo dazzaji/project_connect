@@ -1,8 +1,9 @@
 // Runner plumbing: HTTP client, assertions, observables, and the runner's own reference nodes.
 import { spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { randomBytes, createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { validate as validateSchema } from "../lib/schemas.mjs";
+import { validate as validateSchema, validateAt } from "../lib/schemas.mjs";
+import { canonicalize } from "../lib/jcs.mjs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -52,7 +53,11 @@ export function expectProblem(res, code, what) {
   check(res.status === REGISTERED[got], `${what}: ${got} must be HTTP ${REGISTERED[got]}, got ${res.status}`);
   check(res.json.status === res.status, `${what}: problem.status ${res.json.status} != HTTP ${res.status}`);
   check(res.json.title === got, `${what}: problem.title ${res.json.title} != ${got}`);
-  check(res.contentType.startsWith("application/problem+json"), `${what}: content-type ${res.contentType}`);
+  // Exact HTTP media essence, case insensitive; parameters must be token or quoted-string values.
+  const token = "[!#$%&'*+.^_`|~0-9A-Za-z-]+";
+  const quoted = '"(?:[\\t\\x20-\\x21\\x23-\\x5b\\x5d-\\x7e\\x80-\\xff]|\\\\[\\t\\x20-\\x7e\\x80-\\xff])*"';
+  const media = new RegExp(`^[ \\t]*application/problem\\+json[ \\t]*(?:;[ \\t]*${token}=(?:${token}|${quoted})[ \\t]*)*$`, "i");
+  check(typeof res.contentType === "string" && media.test(res.contentType), `${what}: content-type ${res.contentType}`);
   const v = validateSchema("problem", res.json);
   check(v.ok, `${what}: problem schema: ${v.errors.join("; ")}`);
   return res.json;
@@ -63,22 +68,74 @@ export function expectOk(res, status, what) {
 }
 
 /** Observables for no-side-effect checks (profile.no_side_effect_observables). */
+// Bound observation work and fail closed if a collection cannot be consumed completely. Cursors are data,
+// appended to the same fixed endpoint; a peer never supplies the next URL or an observation hook.
+export async function observationPages(url, bearer, what) {
+  const items = [], cursors = new Set(); let cursor = null, latest = null;
+  for (let page = 0; page < 100; page++) {
+    const next = new URL(url); if (cursor !== null) next.searchParams.set("cursor", cursor);
+    const r = await http("GET", next.href, bearer ? { bearer } : {});
+    check(r.status === 200 && r.json && Array.isArray(r.json.items), `${what}: unreadable HTTP ${r.status}`);
+    check(Object.hasOwn(r.json, "next_cursor") && (r.json.next_cursor === null || typeof r.json.next_cursor === "string" && r.json.next_cursor.length > 0), `${what}: invalid/missing next_cursor`);
+    if (new URL(url).pathname.endsWith("/feed")) {
+      check(Number.isSafeInteger(r.json.latest_seq) && r.json.latest_seq >= 0, `${what}: invalid latest_seq`);
+      if (latest !== null) check(latest === r.json.latest_seq, `${what}: feed changed during pagination`);
+      latest = r.json.latest_seq;
+    }
+    items.push(...r.json.items); check(items.length <= 20000, `${what}: observation record bound exceeded`);
+    cursor = r.json.next_cursor;
+    if (cursor === null) return { items, latest_seq: latest };
+    check(!cursors.has(cursor) && r.json.items.length > 0, `${what}: stalled/repeated cursor`); cursors.add(cursor);
+  }
+  throw new TestFailure(`${what}: observation page bound exceeded`);
+}
+const observationHash = value => createHash("sha256").update(canonicalize(value)).digest("hex");
 // `bearer` (optional) observes a private event through a credential that may see it (its operator's)
 export async function observe(node, eventRef, bearer = null) {
-  const feed = await http("GET", `${node.base}/ilp/v1/events/${eventRef}/feed?since=0`, bearer ? { bearer } : {});
-  const rc = await http("GET", `${node.base}/ilp/v1/events/${eventRef}/receipts`, bearer ? { bearer } : {});
-  // an observation that cannot be made fails the test; it never compares as "unchanged"
-  check(feed.status === 200 && Array.isArray(feed.json?.items) && Number.isInteger(feed.json?.latest_seq), `observe ${node.name} feed: HTTP ${feed.status}`);
-  check(rc.status === 200 && Array.isArray(rc.json?.items), `observe ${node.name} receipts: HTTP ${rc.status}`);
-  const items = feed.json.items;
+  const feed = await observationPages(`${node.base}/ilp/v1/events/${eventRef}/feed?since=0`, bearer, `observe ${node.name} feed`);
+  const rc = await observationPages(`${node.base}/ilp/v1/events/${eventRef}/receipts`, bearer, `observe ${node.name} receipts`);
+  const items = feed.items; let seq = 0;
+  for (const row of items) {
+    check(row && Number.isSafeInteger(row.seq) && row.seq > seq && row.seq <= feed.latest_seq, "observe feed: invalid/nonmonotonic seq"); seq = row.seq;
+    check(typeof row.kind === "string" && row.kind.length > 0 && typeof row.summary === "string" && Object.hasOwn(row, "data"), "observe feed: unreadable record");
+    check(validateAt("receipt", "/properties/occurred_at", row.occurred_at) && validateAt("receipt", "/properties/resource", row.resource_global_id), "observe feed: invalid time/resource");
+  }
+  check(seq === feed.latest_seq, "observe feed: incomplete head");
+  const receiptIds = new Set();
+  for (const row of rc.items) {
+    const v = validateSchema("receipt", row); check(v.ok, `observe receipt: ${v.errors.join("; ")}`);
+    check(!receiptIds.has(row.id), "observe receipts: duplicate id across pages"); receiptIds.add(row.id);
+  }
   return {
-    latest_seq: feed.json?.latest_seq ?? null,
+    latest_seq: feed.latest_seq,
     actions: items.filter((f) => f.kind === "action.accepted").length,
     // every tally or artifact change in slice 1 is itself a feed record (R-CORE-13), so the feed tail covers them
     tail: items.at(-1) ? `${items.at(-1).seq}:${items.at(-1).kind}:${items.at(-1).resource_global_id}` : null,
-    receipts: rc.json?.items?.length ?? null,
-    head: rc.json?.items?.at(-1)?.hash ?? null,
+    receipts: rc.items.length,
+    head: rc.items.at(-1)?.hash ?? null,
+    feed_hash: observationHash(items.map(({seq,occurred_at,kind,resource_global_id,summary,data}) => ({seq,occurred_at,kind,resource_global_id,summary,data}))), receipts_hash: observationHash(rc.items),
   };
+}
+// Operator list rows differ from the retrieval schema: no token, grant or event is required here.
+export async function observeJoins(node, eventRef, bearer) {
+  const { items } = await observationPages(`${node.base}/ilp/v1/events/${eventRef}/join-requests`, bearer, `observe ${node.name} join requests`);
+  const ids = new Set();
+  for (const row of items) {
+    check(row && validateAt("join-request", "/properties/join_request_id", row.join_request_id) && validateAt("join-request", "/properties/status", row.status) && validateAt("join-request", "/properties/subject", row.subject), "observe join requests: unreadable identity/status/subject");
+    if (Object.hasOwn(row, "agent")) check(validateAt("receipt", "/properties/subject_agent", row.agent), "observe join requests: invalid agent");
+    for (const field of ["home", "display_name"]) if (Object.hasOwn(row, field)) check(typeof row[field] === "string", `observe join requests: invalid ${field}`);
+    check(!ids.has(row.join_request_id), "observe join requests: duplicate id across pages"); ids.add(row.join_request_id);
+  }
+  return items.map(j => canonicalize(Object.fromEntries(["join_request_id", "status", "subject", "agent", "home", "display_name"].filter(k => Object.hasOwn(j, k)).map(k => [k, j[k]])))).sort();
+}
+/** A negative event-scoped operation must preserve both public effects and operator-visible admission state. */
+export async function expectRefusal(node, eventRef, bearer, request, code, what) {
+  const before = await observe(node, eventRef, bearer), joins = await observeJoins(node, eventRef, bearer);
+  const response = await request(); expectProblem(response, code, what);
+  await expectNoSideEffects(node, eventRef, before, what, bearer);
+  const after = await observeJoins(node, eventRef, bearer);
+  check(JSON.stringify(after) === JSON.stringify(joins), `${what}: admission state changed`);
+  return response;
 }
 export async function expectNoSideEffects(node, eventRef, before, what, bearer = null) {
   const after = await observe(node, eventRef, bearer);

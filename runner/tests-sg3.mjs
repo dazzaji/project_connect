@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { b64u, decodeJws, generateKey, signJws, TYP, verifyJws } from "../lib/jws.mjs";
 import { verifyReceiptChain } from "../lib/receipt.mjs";
 import { validate } from "../lib/schemas.mjs";
-import { check, expectNoSideEffects, expectOk, expectProblem, http, observe, PC_ROOT, seenProblems, sleep } from "./lib.mjs";
+import { check, expectNoSideEffects, expectOk, expectProblem, expectRefusal, http, observe, PC_ROOT, seenProblems, sleep } from "./lib.mjs";
 
 const nowS = () => Math.floor(Date.now() / 1000);
 const local = (gid) => gid.split(":").pop();
@@ -345,11 +345,12 @@ export const SG3_TESTS = {
   "PC-PROV-1": Object.assign(async (ctx) => {
     const { home } = ctx;
     const prov = ctx.creds.provisioning;
-    expectProblem(await http("POST", `${home.base}/ilp/v1/claims`, { bearer: prov, body: { purpose: "event_join", event: ctx.events.E1.global_id, aud: ctx.host.base, agent: null, on_behalf_of: home.adminHuman } }), "FORBIDDEN", "mint for a non-synthetic human");
-    expectProblem(await http("POST", `${home.base}/ilp/v1/admin/synthetic/humans/${local(home.adminHuman)}/revoke`, { bearer: prov, body: {} }), "FORBIDDEN", "revoke a non-synthetic human");
-    expectProblem(await http("POST", `${home.base}/ilp/v1/federation/peers`, { bearer: prov, body: { base_url: ctx.aux.base } }), "FORBIDDEN", "peer with a provisioning credential");
-    expectProblem(await http("POST", `${home.base}/ilp/v1/events/${ctx.homeEvent.id}/join-requests/00000000-0000-7000-8000-000000000000/approve`, { bearer: prov, body: {} }), "FORBIDDEN", "moderate with a provisioning credential");
-    expectProblem(await http("POST", `${home.base}/ilp/v1/events/${ctx.homeEvent.id}/actions`, { bearer: prov, body: proposal("prov") }), ["AUTH_INVALID", "FORBIDDEN"], "act with a provisioning credential");
+    const op = await home.credential("operator", ctx.homeEvent.id);
+    await expectRefusal(home, ctx.homeEvent.id, op, () => http("POST", `${home.base}/ilp/v1/claims`, { bearer: prov, body: { purpose: "event_join", event: ctx.events.E1.global_id, aud: ctx.host.base, agent: null, on_behalf_of: home.adminHuman } }), "FORBIDDEN", "mint for a non-synthetic human");
+    await expectRefusal(home, ctx.homeEvent.id, op, () => http("POST", `${home.base}/ilp/v1/admin/synthetic/humans/${local(home.adminHuman)}/revoke`, { bearer: prov, body: {} }), "FORBIDDEN", "revoke a non-synthetic human");
+    await expectRefusal(home, ctx.homeEvent.id, op, () => http("POST", `${home.base}/ilp/v1/federation/peers`, { bearer: prov, body: { base_url: ctx.aux.base } }), "FORBIDDEN", "peer with a provisioning credential");
+    await expectRefusal(home, ctx.homeEvent.id, op, () => http("POST", `${home.base}/ilp/v1/events/${ctx.homeEvent.id}/join-requests/00000000-0000-7000-8000-000000000000/approve`, { bearer: prov, body: {} }), "FORBIDDEN", "moderate with a provisioning credential");
+    await expectRefusal(home, ctx.homeEvent.id, op, () => http("POST", `${home.base}/ilp/v1/events/${ctx.homeEvent.id}/actions`, { bearer: prov, body: proposal("prov") }), ["AUTH_INVALID", "FORBIDDEN"], "act with a provisioning credential");
     return { rejected: 5 };
   }, { applies: (ctx) => ctx.home.kind !== "ref" }),
 
@@ -391,7 +392,7 @@ export const SG3_TESTS = {
     expectProblem(await act(ctx.host, E1, v.token, proposal("post-revocation")), ["AUTH_REVOKED", "GRANT_REVOKED"], "act after home revocation");
     await expectNoSideEffects(ctx.host, E1.id, before, "act after home revocation");
     check(elapsed <= bound * 1000, `propagation took ${elapsed} ms > bound ${bound} s`);
-    expectProblem(await http("POST", `${ctx.host.base}/ilp/v1/events/${ctx.events.E2.id}/join-requests`, { body: { claim: spare } }), "SUBJECT_REVOKED", "join by a revoked subject");
+    await expectRefusal(ctx.host, ctx.events.E2.id, ctx.creds.operator.E2, () => http("POST", `${ctx.host.base}/ilp/v1/events/${ctx.events.E2.id}/join-requests`, { body: { claim: spare } }), "SUBJECT_REVOKED", "join by a revoked subject");
     return { propagation_ms: elapsed, bound_s: bound };
   },
   async "PC-REV-3"(ctx) {
@@ -453,10 +454,10 @@ export const SG3_TESTS = {
     const out = {};
     try {
       await sleep(waitS * 1000);
-      const j = await http("POST", `${ctx.host.base}/ilp/v1/events/${ctx.events.E2.id}/join-requests`, { body: { claim: fresh } });
+      const j = await expectRefusal(ctx.host, ctx.events.E2.id, ctx.creds.operator.E2, () => http("POST", `${ctx.host.base}/ilp/v1/events/${ctx.events.E2.id}/join-requests`, { body: { claim: fresh } }), "REVOCATION_STATE_UNKNOWN", "join after 2 × bound without home refresh");
       const pj = expectProblem(j, "REVOCATION_STATE_UNKNOWN", "join after 2 × bound without home refresh");
       check(j.status === 503 && Number.isInteger(pj.retry_after), "fail-closed response must be 503 with retry_after");
-      expectProblem(await act(ctx.host, E1, ctx.token, proposal("during outage")), "REVOCATION_STATE_UNKNOWN", "existing remote session under the pause policy");
+      await expectRefusal(ctx.host, E1.id, ctx.creds.operator.E1, () => act(ctx.host, E1, ctx.token, proposal("during outage")), "REVOCATION_STATE_UNKNOWN", "existing remote session under the pause policy");
       // PC-REV-5: the host's local participation is unaffected
       const lr = await act(ctx.host, ctx.events.E_local, ctx.local.participant_token, proposal("local during outage"));
       ctx.rev5 = { status: lr.status, body: lr.text.slice(0, 200), before: localBefore, after: await observe(ctx.host, ctx.events.E_local.id) };
@@ -516,7 +517,7 @@ export const SG3_TESTS = {
   // ---- late (after every scenario): short-TTL grants past exp + skew ----
   "PC-GRANT-3": Object.assign(async (ctx) => {
     const st = expectOk(await http("GET", ctx.short.payload.status.uri), 200, "grant status");
-    expectProblem(await act(ctx.host, ctx.events.E_short, ctx.short.token, proposal("expired")), "GRANT_EXPIRED", "act on an expired grant");
+    await expectRefusal(ctx.host, ctx.events.E_short.id, ctx.creds.operator.E_short, () => act(ctx.host, ctx.events.E_short, ctx.short.token, proposal("expired")), "GRANT_EXPIRED", "act on an expired grant");
     const st2 = expectOk(await http("GET", ctx.short.payload.status.uri), 200, "grant status");
     check(st2.status === "expired", `status after exp: ${st2.status} (first read ${st.status})`);
     return { status: st2.status };

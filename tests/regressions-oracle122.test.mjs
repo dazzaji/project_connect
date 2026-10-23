@@ -4,28 +4,12 @@
 // (used to show the pre-repair probes accept the counterexamples).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { check, expectProblem, PC_ROOT } from "../runner/lib.mjs";
-
-const SOURCE = process.env.ORACLE122_SOURCE ?? join(PC_ROOT, "runner", "regressions.mjs");
-const src = readFileSync(SOURCE, "utf8");
-function probe(id, scope) {
-  const start = src.indexOf(`  async "${id}"(host) {`);
-  assert.ok(start >= 0, `probe ${id} not found`);
-  const body = src.slice(start, src.indexOf("\n  },", start) + 5);
-  const names = Object.keys(scope);
-  return new Function(...names, `return ({${body}})[${JSON.stringify(id)}];`)(...Object.values(scope));
-}
+import { joinOrder as actualJoinOrder, oversize as actualOversize, feed, receipt, join as joinRow } from "./oracle140-fixtures.mjs";
 const REG = { AUTH_MISSING: 401, AUTH_INVALID: 401, AUTH_REVOKED: 401, PAYLOAD_TOO_LARGE: 413 };
 const problem = (code) => ({ status: REG[code], contentType: "application/problem+json", json: { type: `urn:ilp:error:${code}`, title: code, status: REG[code], detail: "synthetic" }, text: "synthetic" });
 
 // ---- SG2R2-JOIN-ORDER: the invalid-session answers ----
-const joinOrder = (sessionAnswer) => {
-  let n = 0;
-  const http = async (_m, _u, o = {}) => (o.headers?.cookie ? structuredClone(sessionAnswer(n++)) : problem(o.bearer ? "AUTH_INVALID" : "AUTH_MISSING"));
-  return probe("SG2R2-JOIN-ORDER", { http, expectProblem, check })({ createEvent: async () => ({ id: "synthetic-private" }), base: "http://no-network.invalid" });
-};
+const joinOrder = actualJoinOrder;
 
 test("SG2R2-JOIN-ORDER rejects a 401 that is not a registered ILP problem envelope (verifier98 counterexample)", async () => {
   const malformed = { status: 401, contentType: "text/html", json: { title: "UNREGISTERED_SYNTHETIC_CODE" }, text: "not an ILP problem" };
@@ -45,23 +29,14 @@ test("SG2R2-JOIN-ORDER keeps accepting the correct answers (AUTH_INVALID or AUTH
 });
 
 // ---- ASTRA-R2-09: no effect from an oversized payload ----
-// observe / expectNoSideEffects / joinState are synthetic stand-ins with lib.mjs semantics over a synthetic event state;
-// the live run uses the real lib.mjs helpers against the node's public feed/receipts and operator join listing
-const oversize = (effect) => {
-  const state = { feed: 0, receipts: 0, joins: [] };
-  const observe = async () => ({ latest_seq: state.feed, receipts: state.receipts });
-  const expectNoSideEffects = async (_n, _e, before, what) => { const after = await observe(); check(JSON.stringify(after) === JSON.stringify(before), `${what}: side effects observed`); };
-  const joinState = async () => [...state.joins].sort();
-  const http = async (method) => { if (method === "POST") effect(state); return problem("PAYLOAD_TOO_LARGE"); };
-  const host = { base: "http://no-network.invalid", createEvent: async () => ({ id: "synthetic-event" }), credential: async () => "ilpo_synthetic" };
-  return probe("ASTRA-R2-09", { http, expectProblem, check, observe, expectNoSideEffects, joinState })(host);
-};
+// oracle140 retains these seven assertions but now executes the real HTTP/observer/probe bodies.
+const oversize = effect => actualOversize({ effect });
 
 test("ASTRA-R2-09 rejects a correct PAYLOAD_TOO_LARGE that nevertheless wrote an action/receipt (verifier98 counterexample)", async () => {
-  await assert.rejects(oversize((s) => { s.feed += 1; s.receipts += 1; }), /side effects/);
+  await assert.rejects(oversize((s) => { s.feed.items.push(feed()); s.feed.latest_seq=1; s.receipts.items.push(receipt()); }), /side effects/);
 });
 test("ASTRA-R2-09 rejects a hidden change of operator-visible admission state", async () => {
-  await assert.rejects(oversize((s) => { s.joins.push("j1:pending"); }), /admission state changed/);
+  await assert.rejects(oversize((s) => { s.joins.items.push(joinRow()); }), /admission state changed/);
 });
 test("ASTRA-R2-09 keeps accepting the correct refusal with no effect", async () => {
   const r = await oversize(() => {});

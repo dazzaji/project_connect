@@ -5,7 +5,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { b64u, decodeJws, generateKey, signJws, TYP } from "../lib/jws.mjs";
-import { check, expectNoSideEffects, expectOk, expectProblem, http, observe, PC_ROOT, sleep, startReferenceNode } from "./lib.mjs";
+import { check, expectNoSideEffects, expectOk, expectProblem, expectRefusal, http, observe, observeJoins, PC_ROOT, sleep, startReferenceNode } from "./lib.mjs";
 import { selectProbes } from "./select.mjs";
 import { adapter } from "./setup.mjs";
 
@@ -17,9 +17,7 @@ const local = (g) => g.split(":").pop();
 // operator-visible admission state: every join id and its status. Feed and receipts alone miss a silently inserted or
 // mutated pending join (SG2R4-FEED-RESET-GREEN, r5): an observation that cannot be made fails the probe
 async function joinState(node, eventRef, bearer) {
-  const r = await http("GET", `${node.base}/ilp/v1/events/${eventRef}/join-requests`, { bearer });
-  check(r.status === 200 && Array.isArray(r.json?.items), `observe ${node.name} join requests: HTTP ${r.status}`);
-  return r.json.items.map((j) => `${j.join_request_id}:${j.status}`).sort();
+  return observeJoins(node, eventRef, bearer);
 }
 const hostOf = (b) => new URL(b).hostname;
 
@@ -56,8 +54,14 @@ function revokeThenRetrieve(host) {
     expectOk(await http("POST", `${aux.base}/ilp/v1/admin/synthetic/agents/${local(a.syn.agent.id)}/revoke`, { bearer: auxProv, body: {} }), 200, "home revokes agent");
     const bound = (await http("GET", `${host.base}/.well-known/interlateral.json`)).json.federation.revocation_bound_s;
     await sleep((bound + 2) * 1000);
-    const responses = [await retrieve(host, a), await retrieve(host, a)];
-    return { a, before, bound, responses };
+    const responses = [], observations = [];
+    for (let i = 0; i < 2; i++) {
+      const before = await observe(host, a.ev.id, a.op), joinsBefore = await joinState(host, a.ev.id, a.op);
+      responses.push(await retrieve(host, a));
+      observations.push({ before, after: await observe(host, a.ev.id, a.op), joinsBefore, joinsAfter: await joinState(host, a.ev.id, a.op) });
+    }
+    // The revocation cascade is an expected receipted state transition (ASTRA-R2-16), not an unchanged-state claim.
+    return { a, before, bound, responses, observations };
   })());
   return revokedBeforeDelivery.get(host.name);
 }
@@ -67,17 +71,17 @@ const PROBES = {
   // revoked before first delivery → no credentials, no act (ASTRA-R2-01)
   // every retrieval after the bound fails for any delivered token; the first is the precise rejection (ASTRA-R3-04)
   async "ASTRA-R2-01"(host) {
-    const { responses, bound } = await revokeThenRetrieve(host);
+    const { responses, bound, observations } = await revokeThenRetrieve(host);
     for (const [i, r] of responses.entries()) check(!r.json?.participant_token, `retrieval ${i + 1} delivered a participant token to a subject the home had revoked`);
     expectProblem(responses[0], "SUBJECT_REVOKED", "first retrieval after the revocation bound");
-    return { waited_s: bound + 2, first_retrieval: responses[0].json?.title, second_retrieval: responses[1].status };
+    return { waited_s: bound + 2, first_retrieval: responses[0].json?.title, second_retrieval: responses[1].status, observations };
   },
   // a peer cannot attest another home's agent (ASTRA-R2-03)
   async "ASTRA-R2-03"(host) {
     const ev = await host.createEvent({ slug: `reg-r03-${Date.now().toString(36)}` });
     const t = nowS();
     const c = signJws({ iss: aux.base, sub: `ilp:${hostOf(aux.base)}:human:00000000-0000-7000-8000-00000000r003`, aud: host.base, iat: t, exp: t + 600, jti: `claim-r03-${Date.now()}`, display_name: "Foreign agent", verified: true, verified_method: null, agent: { id: "ilp:someone-else.localhost:agent:00000000-0000-7000-8000-000000000001", display_name: "Theirs", license_plate: "IL-AAAAAAAA" }, purpose: "event_join", event: ev.global_id, consent_accepted: null }, aux.key, TYP.claim);
-    expectProblem(await http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests`, { body: { claim: c } }), "VALIDATION_FAILED", "foreign agent");
+    await expectRefusal(host, ev.id, await host.credential("operator", ev.id), () => http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests`, { body: { claim: c } }), "VALIDATION_FAILED", "foreign agent");
     return { rejected: true };
   },
   // a claim with a malformed required member is rejected (ASTRA-R2-04)
@@ -85,7 +89,7 @@ const PROBES = {
     const ev = await host.createEvent({ slug: `reg-r04-${Date.now().toString(36)}` });
     const t = nowS();
     const c = signJws({ iss: aux.base, sub: `ilp:${hostOf(aux.base)}:human:00000000-0000-7000-8000-00000000r004`, aud: host.base, iat: t, exp: t + 600, jti: `claim-r04-${Date.now()}`, display_name: "Malformed", verified: "yes", verified_method: null, agent: null, purpose: "event_join", event: ev.global_id, consent_accepted: null }, aux.key, TYP.claim);
-    expectProblem(await http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests`, { body: { claim: c } }), "VALIDATION_FAILED", "verified: 'yes'");
+    await expectRefusal(host, ev.id, await host.credential("operator", ev.id), () => http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests`, { body: { claim: c } }), "VALIDATION_FAILED", "verified: 'yes'");
     return { rejected: true };
   },
   // an oversized per-action payload is reported at step 0, before credentials (ASTRA-R2-09, ruled FINDING_STANDS), and has
@@ -111,8 +115,9 @@ const PROBES = {
     const [h, p, s] = g.split(".");
     const tampered = `${h}.${b64u.encode(Buffer.from(b64u.decode(p).toString("utf8").replace('"participant"', '"participanu"'), "utf8"))}.${s}`;
     const act = (grant) => http("POST", `${host.base}/ilp/v1/events/${e2.id}/actions`, { bearer: lp.participant_token, headers: grant ? { "ilp-grant": grant } : {}, body: { kind: "unconference.proposal", payload: { title: "x", content: "y" } } });
-    expectProblem(await act(tampered), "SIGNATURE_INVALID", "local token + tampered grant on another event");
-    expectProblem(await act(null), "FORBIDDEN", "local token on another event, no grant");
+    const op = await host.credential("operator", e2.id);
+    await expectRefusal(host, e2.id, op, () => act(tampered), "SIGNATURE_INVALID", "local token + tampered grant on another event");
+    await expectRefusal(host, e2.id, op, () => act(null), "FORBIDDEN", "local token on another event, no grant");
     return { tampered: "SIGNATURE_INVALID", plain: "FORBIDDEN" };
   },
   // event status (7) is reported before an undefined in-scope action kind (9) (SG2R2-KIND-PHASE)
@@ -125,23 +130,24 @@ const PROBES = {
     expectOk(await http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests/${local(j.join_request_id)}/approve`, { bearer: op, body: {} }), 200, "approve");
     const tok = (await http("GET", `${host.base}/ilp/v1/events/${ev.id}/join-requests/${local(j.join_request_id)}`, { bearer: j.retrieval_key })).json.participant_token;
     await host.close(ev);
-    expectProblem(await http("POST", `${host.base}/ilp/v1/events/${ev.id}/actions`, { bearer: tok, body: { kind: "unconference.bogus", payload: {} } }), "PHASE_MISMATCH", "undefined kind on a closed event");
+    await expectRefusal(host, ev.id, op, () => http("POST", `${host.base}/ilp/v1/events/${ev.id}/actions`, { bearer: tok, body: { kind: "unconference.bogus", payload: {} } }), "PHASE_MISMATCH", "undefined kind on a closed event");
     return { reported: "PHASE_MISMATCH" };
   },
   // operator routes: step 1 before step 2 — no existence oracle (SG2R2-JOIN-ORDER)
   async "SG2R2-JOIN-ORDER"(host) {
     const priv = await host.createEvent({ slug: `reg-jo-${Date.now().toString(36)}`, visibility: "private" });
+    const op = await host.credential("operator", priv.id);
     const nil = "00000000-0000-7000-8000-000000000000";
-    expectProblem(await http("GET", `${host.base}/ilp/v1/events/${priv.id}/join-requests`), "AUTH_MISSING", "unauthenticated, private event");
-    expectProblem(await http("GET", `${host.base}/ilp/v1/events/${nil}/join-requests`), "AUTH_MISSING", "unauthenticated, no such event");
+    await expectRefusal(host, priv.id, op, () => http("GET", `${host.base}/ilp/v1/events/${priv.id}/join-requests`), "AUTH_MISSING", "unauthenticated, private event");
+    await expectRefusal(host, priv.id, op, () => http("GET", `${host.base}/ilp/v1/events/${nil}/join-requests`), "AUTH_MISSING", "unauthenticated, no such event");
     // an invalid bearer or session is reported identically whether or not the event exists (r3: still-failing for bearer "bogus")
     for (const bearer of ["bogus", "ilpo_" + "A".repeat(43), "ilpt_" + "A".repeat(43)]) {
-      expectProblem(await http("GET", `${host.base}/ilp/v1/events/${priv.id}/join-requests`, { bearer }), "AUTH_INVALID", `bearer ${bearer.slice(0, 5)}…, private event`);
-      expectProblem(await http("GET", `${host.base}/ilp/v1/events/${nil}/join-requests`, { bearer }), "AUTH_INVALID", `bearer ${bearer.slice(0, 5)}…, no such event`);
+      await expectRefusal(host, priv.id, op, () => http("GET", `${host.base}/ilp/v1/events/${priv.id}/join-requests`, { bearer }), "AUTH_INVALID", `bearer ${bearer.slice(0, 5)}…, private event`);
+      await expectRefusal(host, priv.id, op, () => http("GET", `${host.base}/ilp/v1/events/${nil}/join-requests`, { bearer }), "AUTH_INVALID", `bearer ${bearer.slice(0, 5)}…, no such event`);
     }
     const cookie = { cookie: "il_session=ils_" + "A".repeat(43) };
-    const a = await http("GET", `${host.base}/ilp/v1/events/${priv.id}/join-requests`, { headers: cookie });
-    const b = await http("GET", `${host.base}/ilp/v1/events/${nil}/join-requests`, { headers: cookie });
+    const a = await expectRefusal(host, priv.id, op, () => http("GET", `${host.base}/ilp/v1/events/${priv.id}/join-requests`, { headers: cookie }), ["AUTH_INVALID", "AUTH_MISSING"], "invalid session, private event");
+    const b = await expectRefusal(host, priv.id, op, () => http("GET", `${host.base}/ilp/v1/events/${nil}/join-requests`, { headers: cookie }), ["AUTH_INVALID", "AUTH_MISSING"], "invalid session, no such event");
     // each answer is a complete registered ILP problem envelope (oracle122: status, media type, schema, title), the
     // credential step's code, and identical for the private and the absent event (no existence oracle)
     expectProblem(a, ["AUTH_INVALID", "AUTH_MISSING"], "invalid session, private event");
@@ -154,10 +160,8 @@ const PROBES = {
     const a = await admitted(host, "r3-01");
     const tok = (await retrieve(host, a)).json.participant_token;
     const act = (headers) => http("POST", `${host.base}/ilp/v1/events/${a.ev.id}/actions`, { bearer: tok, headers, body: { kind: "unconference.proposal", payload: { title: "empty grant", content: "x" } } });
-    const before = await observe(host, a.ev.id);
-    expectProblem(await act({ "ilp-grant": "" }), "SIGNATURE_INVALID", "empty ILP-Grant");
-    expectProblem(await act({ "ilp-grant": "not.a.jws" }), "SIGNATURE_INVALID", "malformed ILP-Grant");
-    await expectNoSideEffects(host, a.ev.id, before, "rejected presented grants");
+    await expectRefusal(host, a.ev.id, a.op, () => act({ "ilp-grant": "" }), "SIGNATURE_INVALID", "empty ILP-Grant");
+    await expectRefusal(host, a.ev.id, a.op, () => act({ "ilp-grant": "not.a.jws" }), "SIGNATURE_INVALID", "malformed ILP-Grant");
     return { empty: "SIGNATURE_INVALID" };
   },
   // a join body's own consent_accepted is validated before any admission state (ASTRA-R3-02)
@@ -166,7 +170,7 @@ const PROBES = {
     const op = await host.credential("operator", ev.id);
     const syn = expectOk(await http("POST", `${aux.base}/ilp/v1/admin/synthetic/humans`, { bearer: auxProv, body: { display_name: "Consent" } }), 201, "synthetic");
     const claim = expectOk(await http("POST", `${aux.base}/ilp/v1/claims`, { bearer: auxProv, body: { purpose: "event_join", event: ev.global_id, aud: host.base, agent: null, on_behalf_of: syn.human } }), 201, "claim").claim;
-    expectProblem(await http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests`, { body: { claim, consent_accepted: { text_version: "incomplete" } } }), "VALIDATION_FAILED", "malformed body consent");
+    await expectRefusal(host, ev.id, op, () => http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests`, { body: { claim, consent_accepted: { text_version: "incomplete" } } }), "VALIDATION_FAILED", "malformed body consent");
     const joins = expectOk(await http("GET", `${host.base}/ilp/v1/events/${ev.id}/join-requests`, { bearer: op }), 200, "join list").items;
     check(joins.length === 0, `a malformed-consent join left ${joins.length} join request(s)`);
     return { rejected: "VALIDATION_FAILED", persisted: 0 };
@@ -174,12 +178,12 @@ const PROBES = {
   // unauthenticated export: step 1 before step 2 (SG2R3-EXPORT-ORACLE); a live event is not exported (SG2R3-EXPORT-LIVE)
   async "SG2R3-EXPORT"(host) {
     const priv = await host.createEvent({ slug: `reg-exp-${Date.now().toString(36)}`, visibility: "private" });
-    const a1 = await http("POST", `${host.base}/ilp/v1/events/${priv.id}/exports`, { body: {} });
-    const a2 = await http("POST", `${host.base}/ilp/v1/events/00000000-0000-7000-8000-000000000000/exports`, { body: {} });
+    const op = await host.credential("operator", priv.id);
+    const a1 = await expectRefusal(host, priv.id, op, () => http("POST", `${host.base}/ilp/v1/events/${priv.id}/exports`, { body: {} }), "AUTH_MISSING", "unauthenticated export, private event");
+    const a2 = await expectRefusal(host, priv.id, op, () => http("POST", `${host.base}/ilp/v1/events/00000000-0000-7000-8000-000000000000/exports`, { body: {} }), "AUTH_MISSING", "unauthenticated export, no such event");
     expectProblem(a1, "AUTH_MISSING", "unauthenticated export, private event");
     expectProblem(a2, "AUTH_MISSING", "unauthenticated export, no such event");
-    const op = await host.credential("operator", priv.id);
-    const live = await http("POST", `${host.base}/ilp/v1/events/${priv.id}/exports`, { bearer: op, body: {} });
+    const live = await expectRefusal(host, priv.id, op, () => http("POST", `${host.base}/ilp/v1/events/${priv.id}/exports`, { bearer: op, body: {} }), "VALIDATION_FAILED", "export of a live event");
     expectProblem(live, "VALIDATION_FAILED", "export of a live event (R-EV-25)");
     return { unauthenticated: "AUTH_MISSING", live: live.json?.title };
   },
@@ -187,8 +191,8 @@ const PROBES = {
   async "SG2R3-REVOKE-PREC"(host) {
     const a = await admitted(host, "rvp");
     const g = decodeJws((await retrieve(host, a)).json.grant).payload.jti;
-    expectProblem(await http("POST", `${host.base}/ilp/v1/grants/${local(g)}/revoke`, { body: {} }), "AUTH_MISSING", "unauthenticated revoke, real grant");
-    expectProblem(await http("POST", `${host.base}/ilp/v1/grants/00000000-0000-7000-8000-000000000088/revoke`, { body: {} }), "AUTH_MISSING", "unauthenticated revoke, no such grant");
+    await expectRefusal(host, a.ev.id, a.op, () => http("POST", `${host.base}/ilp/v1/grants/${local(g)}/revoke`, { body: {} }), "AUTH_MISSING", "unauthenticated revoke, real grant");
+    await expectRefusal(host, a.ev.id, a.op, () => http("POST", `${host.base}/ilp/v1/grants/00000000-0000-7000-8000-000000000088/revoke`, { body: {} }), "AUTH_MISSING", "unauthenticated revoke, no such grant");
     return { both: "AUTH_MISSING" };
   },
   // join retrieval: the retrieval key is checked before the join request is resolved (SG2R3-JOIN-GET)
@@ -196,10 +200,10 @@ const PROBES = {
     const a = await admitted(host, "jg", { approve: false });
     const nilJ = `${host.base}/ilp/v1/events/${a.ev.id}/join-requests/00000000-0000-7000-8000-000000000099`;
     const realJ = `${host.base}/ilp/v1/events/${a.ev.id}/join-requests/${local(a.j.join_request_id)}`;
-    expectProblem(await http("GET", nilJ), "AUTH_MISSING", "no key, no such join request");
-    expectProblem(await http("GET", realJ), "AUTH_MISSING", "no key, real join request");
-    expectProblem(await http("GET", nilJ, { bearer: "ilpr_" + "A".repeat(43) }), "AUTH_INVALID", "unknown key, no such join request");
-    expectProblem(await http("GET", realJ, { bearer: "ilpr_" + "A".repeat(43) }), "AUTH_INVALID", "unknown key, real join request");
+    await expectRefusal(host, a.ev.id, a.op, () => http("GET", nilJ), "AUTH_MISSING", "no key, no such join request");
+    await expectRefusal(host, a.ev.id, a.op, () => http("GET", realJ), "AUTH_MISSING", "no key, real join request");
+    await expectRefusal(host, a.ev.id, a.op, () => http("GET", nilJ, { bearer: "ilpr_" + "A".repeat(43) }), "AUTH_INVALID", "unknown key, no such join request");
+    await expectRefusal(host, a.ev.id, a.op, () => http("GET", realJ, { bearer: "ilpr_" + "A".repeat(43) }), "AUTH_INVALID", "unknown key, real join request");
     expectOk(await http("GET", realJ, { bearer: a.j.retrieval_key }), 200, "own key");
     return { missing: "AUTH_MISSING", invalid: "AUTH_INVALID" };
   },
@@ -222,9 +226,7 @@ const PROBES = {
     // Beta's gate needs one proposal before voting opens; a vote in the wrong phase would report PHASE_MISMATCH, not VALIDATION_FAILED
     expectOk(await http("POST", `${host.base}/ilp/v1/events/${a.ev.id}/actions`, { bearer: tok, body: { kind: "unconference.proposal", payload: { title: "gate", content: "x" } } }), 201, "proposal");
     await host.setPhase(a.ev, "voting");
-    const before = await observe(host, a.ev.id);
-    expectProblem(await http("POST", `${host.base}/ilp/v1/events/${a.ev.id}/actions`, { bearer: tok, body: { kind: "unconference.vote", payload: {}, target_action: "00000000-0000-7000-8000-000000000077" } }), "VALIDATION_FAILED", "vote on an unknown target");
-    await expectNoSideEffects(host, a.ev.id, before, "unknown target");
+    await expectRefusal(host, a.ev.id, a.op, () => http("POST", `${host.base}/ilp/v1/events/${a.ev.id}/actions`, { bearer: tok, body: { kind: "unconference.vote", payload: {}, target_action: "00000000-0000-7000-8000-000000000077" } }), "VALIDATION_FAILED", "vote on an unknown target");
     return { reported: "VALIDATION_FAILED" };
   },
   // a home whose revocation feed resets (latest_seq behind what was consumed) is not fresh: no first delivery (SG2R3-W-FEED-RESET, writer-found)
@@ -273,20 +275,26 @@ const PROBES = {
       const bound = (await http("GET", `${host.base}/.well-known/interlateral.json`)).json.federation.revocation_bound_s;
       // well inside the freshness window: two poll intervals (bound/6 each) is enough to detect the reset and re-read from 0
       await sleep((Math.max(2, Math.floor(bound / 3)) + 3) * 1000);
+      const beforeRetrieval = { effects: await observe(host, ev.id, op), joins: await joinState(host, ev.id, op) };
       const r = await http("GET", `${host.base}/ilp/v1/events/${ev.id}/join-requests/${local(j.join_request_id)}`, { bearer: j.retrieval_key });
+      const afterRetrieval = { effects: await observe(host, ev.id, op), joins: await joinState(host, ev.id, op) };
       check(!r.json?.participant_token, "a token was delivered to a subject revoked on the home's replacement feed");
       check(["SUBJECT_REVOKED", "REVOCATION_STATE_UNKNOWN"].includes(r.json?.title), `retrieval after the feed reset: ${r.status} ${r.json?.title}`);
+      expectProblem(r, ["SUBJECT_REVOKED", "REVOCATION_STATE_UNKNOWN"], "retrieval after the feed reset");
       // once the replacement feed has been read completely, the revocation has been applied: the join is rejected
       // (a host may report SUBJECT_REVOKED, or the join's status as rejected) and no token is ever delivered
       await sleep((Math.max(2, Math.floor(bound / 3)) + 3) * 1000);
+      const beforeReread = { effects: await observe(host, ev.id, op), joins: await joinState(host, ev.id, op) };
       const r2 = await http("GET", `${host.base}/ilp/v1/events/${ev.id}/join-requests/${local(j.join_request_id)}`, { bearer: j.retrieval_key });
+      const afterReread = { effects: await observe(host, ev.id, op), joins: await joinState(host, ev.id, op) };
       check(!r2.json?.participant_token, "a token was delivered after the replacement feed was consumed");
       check(r2.json?.title === "SUBJECT_REVOKED" || (r2.status === 200 && r2.json?.status === "rejected"), `after the re-read: ${r2.status} ${r2.json?.title ?? r2.json?.status}`);
+      if (r2.status !== 200) expectProblem(r2, "SUBJECT_REVOKED", "retrieval after the complete re-read");
       // after the complete re-read from 0: the revoked subject is denied admission, the clean subject is admitted
-      expectProblem(await http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests`, { body: { claim: revokedClaim } }), "SUBJECT_REVOKED", "revoked subject after the re-read");
+      await expectRefusal(host, ev.id, op, () => http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests`, { body: { claim: revokedClaim } }), "SUBJECT_REVOKED", "revoked subject after the re-read");
       const admitted2 = await http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests`, { body: { claim: cleanClaim } });
       expectOk(admitted2, 202, "clean subject after the re-read (positive control; the 503 did not consume its claim)");
-      return { discovering_admission: `${discover.status} ${discover.json?.title}`, in_window: r.json?.title, after_reread: r2.json?.title ?? r2.json?.status, revoked_after_reread: "SUBJECT_REVOKED", clean_after_reread: admitted2.status };
+      return { discovering_admission: `${discover.status} ${discover.json?.title}`, in_window: r.json?.title, after_reread: r2.json?.title ?? r2.json?.status, revoked_after_reread: "SUBJECT_REVOKED", clean_after_reread: admitted2.status, retrieval_observations: { beforeRetrieval, afterRetrieval, beforeReread, afterReread } };
     } finally {
       n.stop();
     }
@@ -306,7 +314,7 @@ const PROBES = {
     const ev = await host.createEvent({ slug: `reg-co-${Date.now().toString(36)}` });
     const t = nowS();
     const c = signJws({ iss: aux.base, sub: `ilp:${hostOf(aux.base)}:human:00000000-0000-7000-8000-00000000c0de`, aud: "http://elsewhere.localhost:4999", iat: t, exp: t + 600, jti: `claim-co-${Date.now()}`, display_name: "Order", verified: "yes", verified_method: null, agent: null, purpose: "event_join", event: ev.global_id, consent_accepted: null }, aux.key, TYP.claim);
-    expectProblem(await http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests`, { body: { claim: c } }), "CLAIM_AUDIENCE_MISMATCH", "wrong audience and schema-invalid");
+    await expectRefusal(host, ev.id, await host.credential("operator", ev.id), () => http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests`, { body: { claim: c } }), "CLAIM_AUDIENCE_MISMATCH", "wrong audience and schema-invalid");
     return { reported: "CLAIM_AUDIENCE_MISMATCH" };
   },
   // join state changes are receipted (ASTRA-R2-16)
@@ -325,7 +333,7 @@ const PROBES = {
     const a = await admitted(host, "r11");
     const tok = (await retrieve(host, a)).json.participant_token;
     const claim2 = expectOk(await http("POST", `${aux.base}/ilp/v1/claims`, { bearer: auxProv, body: { purpose: "event_join", event: a.ev.global_id, aud: host.base, agent: a.syn.agent.id, on_behalf_of: a.syn.human } }), 201, "claim 2").claim;
-    const r2 = await http("POST", `${host.base}/ilp/v1/events/${a.ev.id}/join-requests`, { body: { claim: claim2 } });
+    const r2 = await expectRefusal(host, a.ev.id, a.op, () => http("POST", `${host.base}/ilp/v1/events/${a.ev.id}/join-requests`, { body: { claim: claim2 } }), "CONFLICT", "a duplicate join for an admitted principal");
     expectProblem(r2, "CONFLICT", "a duplicate join for an admitted principal");
     expectOk(await http("POST", `${host.base}/ilp/v1/events/${a.ev.id}/actions`, { bearer: tok, body: { kind: "unconference.proposal", payload: { title: "still admitted", content: "x" } } }), 201, "original admission still acts");
     return { duplicate: r2.json?.title };
@@ -351,25 +359,28 @@ const PROBES = {
   // a private event's feed is visible to its own participant token (ASTRA-R2-12) and hidden otherwise (SG2-PRIV-FEED)
   async "ASTRA-R2-12"(host) {
     const ev = await host.createEvent({ slug: `reg-r12-${Date.now().toString(36)}`, visibility: "private", registration_approval: "auto" });
+    const op = await host.credential("operator", ev.id);
     // a caller without membership cannot register on the private event: it answers exactly like an absent id (SG2R5-PRIV-ROUTE)
     const absent = "00000000-0000-7000-8000-000000000000";
-    const [anonPriv, anonAbsent] = [await http("POST", `${host.base}/ilp/v1/events/${ev.id}/registrations`, { body: {} }), await http("POST", `${host.base}/ilp/v1/events/${absent}/registrations`, { body: {} })];
+    const anonPriv = await expectRefusal(host, ev.id, op, () => http("POST", `${host.base}/ilp/v1/events/${ev.id}/registrations`, { body: {} }), "NOT_FOUND", "anonymous private registration");
+    const anonAbsent = await expectRefusal(host, ev.id, op, () => http("POST", `${host.base}/ilp/v1/events/${absent}/registrations`, { body: {} }), "NOT_FOUND", "anonymous absent registration");
     check(`${anonPriv.status} ${anonPriv.json?.title}` === `${anonAbsent.status} ${anonAbsent.json?.title}`, `anonymous registration: private ${anonPriv.status} ${anonPriv.json?.title} vs absent ${anonAbsent.status} ${anonAbsent.json?.title}`);
     // the member is an ordinary participant prepared by the node's own setup surface; registration/token claim and the feed read
     // below are the tested behavior. Any setup-fixture provenance the adapter reports is recorded as supplemental setup evidence
     // only, never asserted here (implementation-neutral; S4 externalizes fixture setup).
     const lp = await host.localParticipant(ev);
     expectOk(await http("GET", `${host.base}/ilp/v1/events/${ev.id}/feed?since=0`, { bearer: lp.participant_token }), 200, "own private feed");
-    expectProblem(await http("GET", `${host.base}/ilp/v1/events/${ev.id}/feed?since=0`), "NOT_FOUND", "anonymous private feed");
+    await expectRefusal(host, ev.id, op, () => http("GET", `${host.base}/ilp/v1/events/${ev.id}/feed?since=0`), "NOT_FOUND", "anonymous private feed");
     return { own: 200, anonymous: 404, anonymous_register: `${anonPriv.status} ${anonPriv.json?.title}`, fixture: lp.fixture ?? null };
   },
   // claim minting refuses a claim that would be schema-invalid (ASTRA-R2-14)
   async "ASTRA-R2-14"(host) {
     const ev = await aux.createEvent({ slug: `reg-r14-${Date.now().toString(36)}` });
     const prov = await host.credential("provisioning");
+    const op = await aux.credential("operator", ev.id);
     const syn = expectOk(await http("POST", `${host.base}/ilp/v1/admin/synthetic/humans`, { bearer: prov, body: { display_name: "Mint" } }), 201, "synthetic");
-    expectProblem(await http("POST", `${host.base}/ilp/v1/claims`, { bearer: prov, body: { purpose: "event_join", event: ev.global_id, aud: aux.base, agent: null, on_behalf_of: syn.human, consent_accepted: { text_version: "v" } } }), "VALIDATION_FAILED", "incomplete consent");
-    expectProblem(await http("POST", `${host.base}/ilp/v1/claims`, { bearer: prov, body: { purpose: "event_join", event: ev.global_id, aud: "not-a-url", agent: null, on_behalf_of: syn.human } }), "VALIDATION_FAILED", "malformed aud");
+    await expectRefusal(aux, ev.id, op, () => http("POST", `${host.base}/ilp/v1/claims`, { bearer: prov, body: { purpose: "event_join", event: ev.global_id, aud: aux.base, agent: null, on_behalf_of: syn.human, consent_accepted: { text_version: "v" } } }), "VALIDATION_FAILED", "incomplete consent");
+    await expectRefusal(aux, ev.id, op, () => http("POST", `${host.base}/ilp/v1/claims`, { bearer: prov, body: { purpose: "event_join", event: ev.global_id, aud: "not-a-url", agent: null, on_behalf_of: syn.human } }), "VALIDATION_FAILED", "malformed aud");
     return { rejected: 2 };
   },
   // SCR-8: the export carries the signed claim JWS (ASTRA-R2-10)
