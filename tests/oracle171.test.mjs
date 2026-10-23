@@ -3,6 +3,25 @@ import assert from 'node:assert/strict';
 import {caller,media,feedCase,lib} from './oracle171-fixtures.mjs';
 const admissionError=e=>e instanceof lib.TestFailure&&/admission state changed|observe join requests/.test(e.message);
 const observerError=e=>e instanceof lib.TestFailure&&/observe|cursor|feed/.test(e.message);
+// R15 residual: exercise the actual full PC-DIR-2 through the maintained signed-claim fixture, for BOTH response pairs.
+const mediaDifference=e=>e instanceof lib.TestFailure&&/private vs absent (?:join|malformed-envelope) refusals differ/.test(e.message);
+const mediaPairs253=[
+ ['quoted-pair charset','charset=utf-8','charset="utf\\-8"',true],
+ ['quoted semicolon space','charset=utf-8; x="a;b=c"','charset=utf-8; x="a; b=c"',false],
+ ['quoted semicolon order','charset=utf-8; x="a;b=c"; y=d','y=d; x="a;b=c"; charset=utf-8',true],
+ ['quoted equals','x="a=b"','x="a=c"',false],
+ ['quote escape','x="a\\\"b"','x="a\\\"c"',false],
+ ['backslash escape','x="a\\\\b"','x="ab"',false],
+ ['noncharset case','x=VALUE','x=value',false],
+ ['charset and parameter-name case','CHARSET="UTF-8"; X=value','charset=utf-8; x=value',true],
+ ['quoted token equivalence','x="va\\lue"','x=value',true],
+ ['quoted boundary spaces','x=" value "','x=value',false],
+ ['structured value boundaries','x="a;b=c"','x=a; b=c',false],
+];
+for(const [name,a,b,equivalent]of mediaPairs253)for(const first of [2,4])test(`253 PC-DIR-2 ${name} pair ${first} ${equivalent?'equivalent':'distinct'}`,()=>{
+ const run=caller('PC-DIR-2',{problemMedia:(n,original)=>n===first?'Application/Problem+JSON; '+a:n===first+1?'application/problem+json; '+b:original});
+ return equivalent?run:assert.rejects(run,mediaDifference);
+});
 test("171 PC-CORE-3 stable complete admissions and intentional transitions pass",()=>caller("PC-CORE-3"));
 test("171 PC-CORE-3 Beta numeric feed envelope passes",()=>caller("PC-CORE-3",{numeric:true}));
 test("171 PC-CORE-3 identical malformed admissions fail",()=>assert.rejects(caller("PC-CORE-3",{mutation:'malformed'}),admissionError));

@@ -16,7 +16,7 @@ const row=n=>({...join(),join_request_id:`ilp:synthetic.localhost:join_request:j
 const fresh=()=>({feed:{items:[feed()],next_cursor:1,latest_seq:1},receipts:{items:[receipt()],next_cursor:null},joins:{items:[row(1),row(2)],next_cursor:null}});
 const ok=json=>({status:200,json});
 const problem=code=>({status:lib.registeredStatus(code),json:{type:'urn:ilp:error:'+code,title:code,status:lib.registeredStatus(code)},contentType:'application/problem+json'});
-export async function caller(id,{side=-1,mutation='status',numeric=false}={}){
+export async function caller(id,{side=-1,mutation='status',numeric=false,problemMedia=null}={}){
  const host={name:'synthetic',base:'http://synthetic.invalid'};
  const events={E1:{id:'e1',global_id:'ilp:synthetic.localhost:event:e1'},E2:{id:'e2',global_id:'ilp:synthetic.localhost:event:e2'},E_private:{id:'private',global_id:'ilp:synthetic.localhost:event:private'},E_nonfed:{global_id:'ilp:synthetic.localhost:event:nonfed'}};
  const ctx={host,home:{base:HOME},profile:{parameters:{clock_skew_s:300,claim_ttl_max_s:86400}},aux:{base:'http://aux.invalid',key},tag:'oracle171',events,
@@ -58,8 +58,10 @@ export async function caller(id,{side=-1,mutation='status',numeric=false}={}){
    if(index===side)effect(state(id==='PC-DIR-2'?'private':e));
    const codes=id==='PC-IDC-3'?['CLAIM_REPLAYED','CLAIM_AUDIENCE_MISMATCH','CLAIM_EXPIRED','SIGNATURE_INVALID','SIGNATURE_INVALID']:id==='PC-CORE-3'?['SIGNATURE_INVALID','SIGNATURE_INVALID','UNKNOWN_SIGNER']:null;
    // repair233: R-CORE-29 step 0 before step 2 — a PC-DIR-2 join without a string claim is VALIDATION_FAILED (private or absent)
-   if(id==='PC-DIR-2'&&method==='POST'&&typeof JSON.parse(o.body??'{}').claim!=='string')return problem('VALIDATION_FAILED');
-   return problem(codes?codes[index]:id==='PC-PEER-2'?'NOT_A_PEER':id==='PC-REV-3'?'PEER_SUSPENDED':'NOT_FOUND');
+   const answer=id==='PC-DIR-2'&&method==='POST'&&typeof JSON.parse(o.body??'{}').claim!=='string'
+    ? problem('VALIDATION_FAILED') : problem(codes?codes[index]:id==='PC-PEER-2'?'NOT_A_PEER':id==='PC-REV-3'?'PEER_SUSPENDED':'NOT_FOUND');
+   if(id==='PC-DIR-2'&&problemMedia)answer.contentType=problemMedia(index,answer.contentType);
+   return answer;
   }
   assert(kind,'unhandled fixture request '+p);
   const q=structuredClone(state(e)[kind]);

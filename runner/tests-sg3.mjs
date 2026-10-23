@@ -215,7 +215,28 @@ export const SG3_TESTS = {
     // documented and narrow: a host may echo the caller's own request reference (the path segment it sent) in the
     // problem's request-derived members `detail` and `instance`; exactly that string (raw or URL-encoded) is replaced by a
     // placeholder there. No member is dropped and every other byte of every member is compared.
-    const media = (ct) => { const [essence, ...params] = String(ct ?? "").split(";").map((x) => x.trim()); return [essence.toLowerCase(), ...params.filter(Boolean).map((p) => { const i = p.indexOf("="); const k = p.slice(0, i).trim().toLowerCase(); const v = p.slice(i + 1).trim().replace(/^"(.*)"$/, "$1"); return `${k}=${k === "charset" ? v.toLowerCase() : v}`; }).sort()].join(";"); };
+    const media = (ct) => {
+      check(isProblemMediaType(ct), "invalid problem media type in equivalence comparison");
+      // Semicolons delimit parameters only outside quoted strings. Keep quoted contents exactly, decoding quoted-pairs.
+      const parts = []; let part = "", quoted = false, escaped = false;
+      for (const c of ct) {
+        if (c === ";" && !quoted) { parts.push(part); part = ""; continue; }
+        part += c;
+        if (escaped) escaped = false;
+        else if (quoted && c === "\\") escaped = true;
+        else if (c === '"') quoted = !quoted;
+      }
+      parts.push(part);
+      const essence = parts.shift().trim().toLowerCase();
+      const params = parts.map((p) => {
+        const i = p.indexOf("="), name = p.slice(0, i).trim().toLowerCase(), raw = p.slice(i + 1).trim();
+        const value = raw.startsWith('"') ? raw.slice(1, -1).replace(/\\([\s\S])/g, "$1") : raw;
+        return [name, name === "charset" ? value.toLowerCase() : value];
+      });
+      // Structured pairs preserve value boundaries, spaces, case and duplicate parameters; never flatten back to ';'.
+      params.sort(([a, av], [b, bv]) => a < b ? -1 : a > b ? 1 : av < bv ? -1 : av > bv ? 1 : 0);
+      return { essence, params };
+    };
     const doc = (r, ref) => {
       const body = { ...(r.json ?? {}) };
       for (const k of ["detail", "instance"]) if (typeof body[k] === "string") for (const form of [ref, encodeURIComponent(ref)]) body[k] = body[k].split(form).join("<requested-ref>");
