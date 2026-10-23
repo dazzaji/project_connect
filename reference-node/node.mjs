@@ -323,9 +323,18 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
   const peerFresh = (p) => Date.now() - p.last_good_refresh_ms <= 2 * revocationBoundS * 1000;
 
   let pollTimer = null;
+  // A background poll is skipped for a peer whose refresh work is already queued or running: a periodic tick never queues
+  // behind a slow or failing refresh, so background work cannot accumulate while a home is unreachable (fix64). Explicit
+  // refreshes (admission, peer add) still always queue and keep their serialized order, current-record re-read and reset
+  // handling; other peers are polled independently.
+  function pollPeer(p) {
+    if (refreshQueues.has(p.host)) return false;
+    refreshPeer(p).catch((e) => log(`peer ${p.host} refresh failed: ${e.message}`));
+    return true;
+  }
   function startPolling(intervalMs = Math.max(1000, Math.floor((revocationBoundS * 1000) / 6))) {
     pollTimer = setInterval(() => {
-      for (const p of peers.values()) if (p.state === "active") refreshPeer(p).catch((e) => log(`peer ${p.host} refresh failed: ${e.message}`));
+      for (const p of peers.values()) if (p.state === "active") pollPeer(p);
     }, intervalMs);
     pollTimer.unref?.();
   }
