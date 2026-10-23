@@ -18,7 +18,113 @@ const mediaPairs253=[
  ['quoted boundary spaces','x=" value "','x=value',false],
  ['structured value boundaries','x="a;b=c"','x=a; b=c',false],
 ];
-for(const [name,a,b,equivalent]of mediaPairs253)for(const first of [2,4])test(`253 PC-DIR-2 ${name} pair ${first} ${equivalent?'equivalent':'distinct'}`,()=>{
+test("253 PC-DIR-2 quoted-pair charset pair 2 equivalent",()=>{
+ const [name,a,b,equivalent]=mediaPairs253[0]; const first=2;
+ const run=caller('PC-DIR-2',{problemMedia:(n,original)=>n===first?'Application/Problem+JSON; '+a:n===first+1?'application/problem+json; '+b:original});
+ return equivalent?run:assert.rejects(run,mediaDifference);
+});
+test("253 PC-DIR-2 quoted-pair charset pair 4 equivalent",()=>{
+ const [name,a,b,equivalent]=mediaPairs253[0]; const first=4;
+ const run=caller('PC-DIR-2',{problemMedia:(n,original)=>n===first?'Application/Problem+JSON; '+a:n===first+1?'application/problem+json; '+b:original});
+ return equivalent?run:assert.rejects(run,mediaDifference);
+});
+test("253 PC-DIR-2 quoted semicolon space pair 2 distinct",()=>{
+ const [name,a,b,equivalent]=mediaPairs253[1]; const first=2;
+ const run=caller('PC-DIR-2',{problemMedia:(n,original)=>n===first?'Application/Problem+JSON; '+a:n===first+1?'application/problem+json; '+b:original});
+ return equivalent?run:assert.rejects(run,mediaDifference);
+});
+test("253 PC-DIR-2 quoted semicolon space pair 4 distinct",()=>{
+ const [name,a,b,equivalent]=mediaPairs253[1]; const first=4;
+ const run=caller('PC-DIR-2',{problemMedia:(n,original)=>n===first?'Application/Problem+JSON; '+a:n===first+1?'application/problem+json; '+b:original});
+ return equivalent?run:assert.rejects(run,mediaDifference);
+});
+test("253 PC-DIR-2 quoted semicolon order pair 2 equivalent",()=>{
+ const [name,a,b,equivalent]=mediaPairs253[2]; const first=2;
+ const run=caller('PC-DIR-2',{problemMedia:(n,original)=>n===first?'Application/Problem+JSON; '+a:n===first+1?'application/problem+json; '+b:original});
+ return equivalent?run:assert.rejects(run,mediaDifference);
+});
+test("253 PC-DIR-2 quoted semicolon order pair 4 equivalent",()=>{
+ const [name,a,b,equivalent]=mediaPairs253[2]; const first=4;
+ const run=caller('PC-DIR-2',{problemMedia:(n,original)=>n===first?'Application/Problem+JSON; '+a:n===first+1?'application/problem+json; '+b:original});
+ return equivalent?run:assert.rejects(run,mediaDifference);
+});
+test("253 PC-DIR-2 quoted equals pair 2 distinct",()=>{
+ const [name,a,b,equivalent]=mediaPairs253[3]; const first=2;
+ const run=caller('PC-DIR-2',{problemMedia:(n,original)=>n===first?'Application/Problem+JSON; '+a:n===first+1?'application/problem+json; '+b:original});
+ return equivalent?run:assert.rejects(run,mediaDifference);
+});
+test("253 PC-DIR-2 quoted equals pair 4 distinct",()=>{
+ const [name,a,b,equivalent]=mediaPairs253[3]; const first=4;
+ const run=caller('PC-DIR-2',{problemMedia:(n,original)=>n===first?'Application/Problem+JSON; '+a:n===first+1?'application/problem+json; '+b:original});
+ return equivalent?run:assert.rejects(run,mediaDifference);
+});
+test("253 PC-DIR-2 quote escape pair 2 distinct",()=>{
+ const [name,a,b,equivalent]=mediaPairs253[4]; const first=2;
+ const run=caller('PC-DIR-2',{problemMedia:(n,original)=>n===first?'Application/Problem+JSON; '+a:n===first+1?'application/problem+json; '+b:original});
+ return equivalent?run:assert.rejects(run,mediaDifference);
+});
+test("253 PC-DIR-2 quote escape pair 4 distinct",()=>{
+ const [name,a,b,equivalent]=mediaPairs253[4]; const first=4;
+ const run=caller('PC-DIR-2',{problemMedia:(n,original)=>n===first?'Application/Problem+JSON; '+a:n===first+1?'application/problem+json; '+b:original});
+ return equivalent?run:assert.rejects(run,mediaDifference);
+});
+test("253 PC-DIR-2 backslash escape pair 2 distinct",()=>{
+ const [name,a,b,equivalent]=mediaPairs253[5]; const first=2;
+ const run=caller('PC-DIR-2',{problemMedia:(n,original)=>n===first?'Application/Problem+JSON; '+a:n===first+1?'application/problem+json; '+b:original});
+ return equivalent?run:assert.rejects(run,mediaDifference);
+});
+test("253 PC-DIR-2 backslash escape pair 4 distinct",()=>{
+ const [name,a,b,equivalent]=mediaPairs253[5]; const first=4;
+ const run=caller('PC-DIR-2',{problemMedia:(n,original)=>n===first?'Application/Problem+JSON; '+a:n===first+1?'application/problem+json; '+b:original});
+ return equivalent?run:assert.rejects(run,mediaDifference);
+});
+test("253 PC-DIR-2 noncharset case pair 2 distinct",()=>{
+ const [name,a,b,equivalent]=mediaPairs253[6]; const first=2;
+ const run=caller('PC-DIR-2',{problemMedia:(n,original)=>n===first?'Application/Problem+JSON; '+a:n===first+1?'application/problem+json; '+b:original});
+ return equivalent?run:assert.rejects(run,mediaDifference);
+});
+test("253 PC-DIR-2 noncharset case pair 4 distinct",()=>{
+ const [name,a,b,equivalent]=mediaPairs253[6]; const first=4;
+ const run=caller('PC-DIR-2',{problemMedia:(n,original)=>n===first?'Application/Problem+JSON; '+a:n===first+1?'application/problem+json; '+b:original});
+ return equivalent?run:assert.rejects(run,mediaDifference);
+});
+test("253 PC-DIR-2 charset and parameter-name case pair 2 equivalent",()=>{
+ const [name,a,b,equivalent]=mediaPairs253[7]; const first=2;
+ const run=caller('PC-DIR-2',{problemMedia:(n,original)=>n===first?'Application/Problem+JSON; '+a:n===first+1?'application/problem+json; '+b:original});
+ return equivalent?run:assert.rejects(run,mediaDifference);
+});
+test("253 PC-DIR-2 charset and parameter-name case pair 4 equivalent",()=>{
+ const [name,a,b,equivalent]=mediaPairs253[7]; const first=4;
+ const run=caller('PC-DIR-2',{problemMedia:(n,original)=>n===first?'Application/Problem+JSON; '+a:n===first+1?'application/problem+json; '+b:original});
+ return equivalent?run:assert.rejects(run,mediaDifference);
+});
+test("253 PC-DIR-2 quoted token equivalence pair 2 equivalent",()=>{
+ const [name,a,b,equivalent]=mediaPairs253[8]; const first=2;
+ const run=caller('PC-DIR-2',{problemMedia:(n,original)=>n===first?'Application/Problem+JSON; '+a:n===first+1?'application/problem+json; '+b:original});
+ return equivalent?run:assert.rejects(run,mediaDifference);
+});
+test("253 PC-DIR-2 quoted token equivalence pair 4 equivalent",()=>{
+ const [name,a,b,equivalent]=mediaPairs253[8]; const first=4;
+ const run=caller('PC-DIR-2',{problemMedia:(n,original)=>n===first?'Application/Problem+JSON; '+a:n===first+1?'application/problem+json; '+b:original});
+ return equivalent?run:assert.rejects(run,mediaDifference);
+});
+test("253 PC-DIR-2 quoted boundary spaces pair 2 distinct",()=>{
+ const [name,a,b,equivalent]=mediaPairs253[9]; const first=2;
+ const run=caller('PC-DIR-2',{problemMedia:(n,original)=>n===first?'Application/Problem+JSON; '+a:n===first+1?'application/problem+json; '+b:original});
+ return equivalent?run:assert.rejects(run,mediaDifference);
+});
+test("253 PC-DIR-2 quoted boundary spaces pair 4 distinct",()=>{
+ const [name,a,b,equivalent]=mediaPairs253[9]; const first=4;
+ const run=caller('PC-DIR-2',{problemMedia:(n,original)=>n===first?'Application/Problem+JSON; '+a:n===first+1?'application/problem+json; '+b:original});
+ return equivalent?run:assert.rejects(run,mediaDifference);
+});
+test("253 PC-DIR-2 structured value boundaries pair 2 distinct",()=>{
+ const [name,a,b,equivalent]=mediaPairs253[10]; const first=2;
+ const run=caller('PC-DIR-2',{problemMedia:(n,original)=>n===first?'Application/Problem+JSON; '+a:n===first+1?'application/problem+json; '+b:original});
+ return equivalent?run:assert.rejects(run,mediaDifference);
+});
+test("253 PC-DIR-2 structured value boundaries pair 4 distinct",()=>{
+ const [name,a,b,equivalent]=mediaPairs253[10]; const first=4;
  const run=caller('PC-DIR-2',{problemMedia:(n,original)=>n===first?'Application/Problem+JSON; '+a:n===first+1?'application/problem+json; '+b:original});
  return equivalent?run:assert.rejects(run,mediaDifference);
 });
