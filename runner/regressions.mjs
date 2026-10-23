@@ -14,6 +14,13 @@ const harness = args.harness ?? "http://127.0.0.1:4180";
 const work = join(PC_ROOT, ".run", `regressions-${Date.now()}`);
 const nowS = () => Math.floor(Date.now() / 1000);
 const local = (g) => g.split(":").pop();
+// operator-visible admission state: every join id and its status. Feed and receipts alone miss a silently inserted or
+// mutated pending join (SG2R4-FEED-RESET-GREEN, r5): an observation that cannot be made fails the probe
+async function joinState(node, eventRef, bearer) {
+  const r = await http("GET", `${node.base}/ilp/v1/events/${eventRef}/join-requests`, { bearer });
+  check(r.status === 200 && Array.isArray(r.json?.items), `observe ${node.name} join requests: HTTP ${r.status}`);
+  return r.json.items.map((j) => `${j.join_request_id}:${j.status}`).sort();
+}
 const hostOf = (b) => new URL(b).hostname;
 
 const pcRef = await startReferenceNode({ name: "pc-ref", port: 4193, work });
@@ -243,9 +250,12 @@ const PROBES = {
       // the very next admission discovers the reset (no sleep, no poll wait first): it cannot be decided on the pre-reset
       // state, so it fails 503 REVOCATION_STATE_UNKNOWN with retry_after and leaves no join, receipt or feed trace
       const beforeDiscover = await observe(host, ev.id, op);
+      const joinsBeforeDiscover = await joinState(host, ev.id, op);
       const discover = await http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests`, { body: { claim: cleanClaim } });
+      const joinsAfterDiscover = await joinState(host, ev.id, op);
       expectProblem(discover, "REVOCATION_STATE_UNKNOWN", "the admission that discovers the home's feed reset");
       check(discover.status === 503 && discover.json?.retry_after != null, `reset-discovering admission: ${discover.status}, retry_after ${discover.json?.retry_after}`);
+      check(JSON.stringify(joinsAfterDiscover) === JSON.stringify(joinsBeforeDiscover), `reset-discovering admission changed join requests ${JSON.stringify(joinsBeforeDiscover)} → ${JSON.stringify(joinsAfterDiscover)}`);
       await expectNoSideEffects(host, ev.id, beforeDiscover, "reset-discovering admission", op);
       // the restarted home no longer knows the subject; its admin surface publishes the signed revocation directly (seq 1 of the new feed)
       expectOk(await http("POST", `${n.base}/ilp/v1/admin/revocations`, { bearer: n.admin, body: { kind: "human", subject: syn.human, reason: "revoked after restart" } }), 201, "restarted home revokes the subject");

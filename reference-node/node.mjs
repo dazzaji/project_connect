@@ -227,11 +227,32 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
     return p?.keys.find((k) => k.kid === kid) ?? null;
   }
 
-  async function refreshPeer(p) {
+  // Refreshes of one peer are serialized (R-FED-21/21a): each runs only after the previous one for that host has settled,
+  // re-reads the peer's CURRENT record and cursor when it starts, and discards its result if the peer is replaced or removed
+  // meanwhile. A late reply from an earlier refresh therefore can never restore freshness or a cursor after a later refresh
+  // found the feed reset. A failed refresh releases the queue; other peers are never blocked.
+  const refreshQueues = new Map(); // host -> tail promise of the refreshes queued for that peer
+  function refreshPeer(target) {
+    const peerHost = typeof target === "string" ? target : target.host;
+    const run = (refreshQueues.get(peerHost) ?? Promise.resolve()).then(() => refreshPeerNow(peerHost));
+    const tail = run.catch(() => {});
+    refreshQueues.set(peerHost, tail);
+    tail.then(() => { if (refreshQueues.get(peerHost) === tail) refreshQueues.delete(peerHost); });
+    return run;
+  }
+
+  async function refreshPeerNow(peerHost) {
+    const p = peers.get(peerHost);
+    if (!p || p.state === "removed") throw new Error(`peer ${peerHost} is not an active peer`);
+    // after every await: a replaced or removed peer record is never written (no detached stale-object writes)
+    const stillCurrent = () => {
+      if (peers.get(peerHost) !== p || p.state === "removed") throw new Error(`peer ${peerHost} was replaced or removed during refresh; result discarded`);
+    };
     let since = p.last_seq;
     let latest = null;
     for (let page = 0; page < 1000; page++) {
       const feed = await fetchJson(`${p.base_url}/ilp/v1/federation/revocations?since=${since}`);
+      stillCurrent();
       if (!validate("revocation-feed", feed).ok) throw new Error(`malformed revocation feed from ${p.host}`);
       // a feed behind what was already consumed has been reset or replaced: the peer's revocation state is unknown from
       // this moment (freshness dropped, cursor reset) until the replacement feed has been read completely from 0 (R-FED-21)
@@ -355,30 +376,33 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
   const MANDATES = ["human_directed", "human_approved", "standing_instruction", "agent_draft_unaccepted"];
 
   // ---- enforcement: every reported error follows R-CORE-29, and nothing is written before all checks pass ----
+  /** Step 1a classifier: true when the bearer is an identity claim that verifies (this host's or a peer's key). */
+  function verifiesAsIdentityClaim(bearer) {
+    if (bearer.split(".").length !== 3) return false;
+    let decoded = null;
+    try {
+      decoded = decodeJws(bearer);
+    } catch {}
+    if (decoded?.header?.typ !== TYP.claim) return false;
+    let issHost = null;
+    try {
+      issHost = hostOf(String(decoded.payload.iss));
+    } catch {}
+    const p = issHost ? peers.get(issHost) : null;
+    try {
+      verifyJws(bearer, (kid) => (issHost === host ? ownKey(kid) : p ? resolvePeerKey(p.host, kid) : null), { typ: TYP.claim });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   function authenticate(headers) {
     // steps 1 and 1a, independent of the requested event
     const bearer = (headers.authorization ?? "").replace(/^Bearer\s+/i, "");
     if (!bearer) throw new Problem("AUTH_MISSING");
     if (!bearer.startsWith("ilpt_")) {
-      if (bearer.split(".").length === 3) {
-        let decoded = null;
-        try {
-          decoded = decodeJws(bearer);
-        } catch {}
-        if (decoded?.header?.typ === TYP.claim) {
-          let issHost = null;
-          try {
-            issHost = hostOf(String(decoded.payload.iss));
-          } catch {}
-          const p = issHost ? peers.get(issHost) : null;
-          let ok = false;
-          try {
-            verifyJws(bearer, (kid) => (issHost === host ? ownKey(kid) : p ? resolvePeerKey(p.host, kid) : null), { typ: TYP.claim });
-            ok = true;
-          } catch {}
-          if (ok) throw new Problem("AUTHZ_REQUIRED", "an identity claim confers no authority (P11)");
-        }
-      }
+      if (verifiesAsIdentityClaim(bearer)) throw new Problem("AUTHZ_REQUIRED", "an identity claim confers no authority (P11)");
       throw new Problem("AUTH_INVALID", "credential is not a participant token");
     }
     const t = findSecret(tokens, bearer);
@@ -757,6 +781,8 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
       } catch (e) {
         log(`join: refresh of ${p.host} failed: ${e.message}`);
       }
+      // the record may have been replaced or removed while the refresh was queued: judge the peer's current record only
+      if (peers.get(p.host) !== p) throw new Problem("REVOCATION_STATE_UNKNOWN", "home peer record changed during the request", { retry_after: revocationBoundS });
       if (!peerFresh(p)) throw new Problem("REVOCATION_STATE_UNKNOWN", "home revocation state cannot be established", { retry_after: revocationBoundS });
       if (p.revoked.has(`claim:${c.jti}`) || p.revoked.has(`human:${c.sub}`) || (c.agent && (p.revoked.has(`agent:${c.agent.id}`) || p.revoked.has(`plate:${c.agent.license_plate}`)))) throw new Problem("SUBJECT_REVOKED");
       if (c.event !== ev.gid) throw new Problem("VALIDATION_FAILED", "claim is for another event");
@@ -896,6 +922,10 @@ export function createNode({ baseUrl, name, key, keyring = [key], build, deploym
 
     // export (ilp-export/1 with additive grants, revocations, claims)
     ["POST", "/ilp/v1/events/:ref/exports", ({ headers, params }) => {
+      // step 1a (ASTRA-R5-EXPORT-1A): a verifying identity claim is a valid credential that confers no authority
+      const bearer = (headers.authorization ?? "").replace(/^Bearer\s+/i, "");
+      if (bearer && !(adminToken && bearer === adminToken) && !findSecret(credentials, bearer) && verifiesAsIdentityClaim(bearer))
+        throw new Problem("AUTHZ_REQUIRED", "an identity claim confers no authority (P11)");
       requireCredential(headers, ["operator"]); // step 1 before step 2 (SG2R3-EXPORT-ORACLE)
       const ev = eventByRef(params.ref);
       requireCredential(headers, ["operator"], ev.id);
