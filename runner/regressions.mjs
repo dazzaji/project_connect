@@ -229,11 +229,23 @@ const PROBES = {
       const claim = expectOk(await http("POST", `${rst.base}/ilp/v1/claims`, { bearer: prov, body: { purpose: "event_join", event: ev.global_id, aud: host.base, agent: null, on_behalf_of: syn.human } }), 201, "claim").claim;
       const j = expectOk(await http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests`, { body: { claim } }), 202, "join");
       expectOk(await http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests/${local(j.join_request_id)}/approve`, { bearer: op, body: {} }), 200, "approve");
+      // claims minted before the restart (same home keys): a clean second subject, and the soon-revoked subject again
+      const clean = expectOk(await http("POST", `${rst.base}/ilp/v1/admin/synthetic/humans`, { bearer: prov, body: { display_name: "Clean subject" } }), 201, "clean synthetic");
+      const mint = async (human) => expectOk(await http("POST", `${rst.base}/ilp/v1/claims`, { bearer: prov, body: { purpose: "event_join", event: ev.global_id, aud: host.base, agent: null, on_behalf_of: human } }), 201, "claim").claim;
+      const cleanClaim = await mint(clean.human);
+      const revokedClaim = await mint(syn.human);
       // the home restarts with an EMPTY feed (same keys) and then revokes the approved subject: that revocation is seq 1 of
       // the replacement feed — invisible to a host that keeps its cursor at 3 and stays "fresh" (SG2R4-FEED-RESET-GREEN)
       n.stop();
       await sleep(500);
       n = await startReferenceNode({ name, port: 4195, work });
+      // the very next admission discovers the reset (no sleep, no poll wait first): it cannot be decided on the pre-reset
+      // state, so it fails 503 REVOCATION_STATE_UNKNOWN with retry_after and leaves no join, receipt or feed trace
+      const beforeDiscover = await observe(host, ev.id, op);
+      const discover = await http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests`, { body: { claim: cleanClaim } });
+      expectProblem(discover, "REVOCATION_STATE_UNKNOWN", "the admission that discovers the home's feed reset");
+      check(discover.status === 503 && discover.json?.retry_after != null, `reset-discovering admission: ${discover.status}, retry_after ${discover.json?.retry_after}`);
+      await expectNoSideEffects(host, ev.id, beforeDiscover, "reset-discovering admission", op);
       // the restarted home no longer knows the subject; its admin surface publishes the signed revocation directly (seq 1 of the new feed)
       expectOk(await http("POST", `${n.base}/ilp/v1/admin/revocations`, { bearer: n.admin, body: { kind: "human", subject: syn.human, reason: "revoked after restart" } }), 201, "restarted home revokes the subject");
       const bound = (await http("GET", `${host.base}/.well-known/interlateral.json`)).json.federation.revocation_bound_s;
@@ -248,7 +260,11 @@ const PROBES = {
       const r2 = await http("GET", `${host.base}/ilp/v1/events/${ev.id}/join-requests/${local(j.join_request_id)}`, { bearer: j.retrieval_key });
       check(!r2.json?.participant_token, "a token was delivered after the replacement feed was consumed");
       check(r2.json?.title === "SUBJECT_REVOKED" || (r2.status === 200 && r2.json?.status === "rejected"), `after the re-read: ${r2.status} ${r2.json?.title ?? r2.json?.status}`);
-      return { in_window: r.json?.title, after_reread: r2.json?.title ?? r2.json?.status };
+      // after the complete re-read from 0: the revoked subject is denied admission, the clean subject is admitted
+      expectProblem(await http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests`, { body: { claim: revokedClaim } }), "SUBJECT_REVOKED", "revoked subject after the re-read");
+      const admitted2 = await http("POST", `${host.base}/ilp/v1/events/${ev.id}/join-requests`, { body: { claim: cleanClaim } });
+      expectOk(admitted2, 202, "clean subject after the re-read (positive control; the 503 did not consume its claim)");
+      return { discovering_admission: `${discover.status} ${discover.json?.title}`, in_window: r.json?.title, after_reread: r2.json?.title ?? r2.json?.status, revoked_after_reread: "SUBJECT_REVOKED", clean_after_reread: admitted2.status };
     } finally {
       n.stop();
     }
@@ -378,6 +394,8 @@ async function paginationProbe(node) {
 const results = [];
 for (const [label, host] of [["beta-one", beta], ["pc-ref", ref]]) {
   for (const [id, fn] of Object.entries(PROBES)) {
+    // --only ID[,ID]: a focused run of named probes (writer pre/post proof); the default remains the complete set
+    if (args.only && !args.only.split(",").includes(id)) continue;
     try {
       const obs = await fn(host);
       results.push({ id, node: label, status: "pass", obs });
@@ -386,6 +404,7 @@ for (const [label, host] of [["beta-one", beta], ["pc-ref", ref]]) {
     }
     console.log(`${results.at(-1).status === "pass" ? "PASS" : "FAIL"} ${id} @ ${label}${results.at(-1).error ? ` — ${results.at(-1).error}` : ""}`);
   }
+  if (args.only && !args.only.split(",").includes("ASTRA-R2-02")) continue;
   try {
     results.push({ id: "ASTRA-R2-02", node: label, status: "pass", obs: await paginationProbe(host) });
   } catch (e) {
@@ -395,6 +414,8 @@ for (const [label, host] of [["beta-one", beta], ["pc-ref", ref]]) {
 }
 const out = args.out ?? join(work, "regressions.json");
 writeFileSync(out, JSON.stringify(results, null, 2));
+// a filter that selects nothing is a failed run, never "0 fail" (zero-test false green)
+if (!results.length) { console.error(`no regression probes ran${args.only ? ` for --only ${args.only}` : ""}`); process.exit(1); }
 const failed = results.filter((r) => r.status === "fail").length;
 console.log(`\n${results.length} regression probes, ${results.length - failed} pass, ${failed} fail — ${out}`);
 process.exit(failed ? 1 : 0);
