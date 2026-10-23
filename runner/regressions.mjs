@@ -334,10 +334,10 @@ const PROBES = {
     const absent = "00000000-0000-7000-8000-000000000000";
     const [anonPriv, anonAbsent] = [await http("POST", `${host.base}/ilp/v1/events/${ev.id}/registrations`, { body: {} }), await http("POST", `${host.base}/ilp/v1/events/${absent}/registrations`, { body: {} })];
     check(`${anonPriv.status} ${anonPriv.json?.title}` === `${anonAbsent.status} ${anonAbsent.json?.title}`, `anonymous registration: private ${anonPriv.status} ${anonPriv.json?.title} vs absent ${anonAbsent.status} ${anonAbsent.json?.title}`);
-    // the member is an ordinary participant: on Beta its membership is a declared harness test fixture (no product invite
-    // workflow exists — recorded functional gap); registration and token claim then go through the normal HTTP routes
+    // the member is an ordinary participant prepared by the node's own setup surface; registration/token claim and the feed read
+    // below are the tested behavior. Any setup-fixture provenance the adapter reports is recorded as supplemental setup evidence
+    // only, never asserted here (implementation-neutral; S4 externalizes fixture setup).
     const lp = await host.localParticipant(ev);
-    if (host.kind === "beta") check(lp.fixture?.kind === "seeded-active-cohort-membership" && lp.fixture.role === "participant", `Beta private-member fixture provenance missing: ${JSON.stringify(lp.fixture)}`);
     expectOk(await http("GET", `${host.base}/ilp/v1/events/${ev.id}/feed?since=0`, { bearer: lp.participant_token }), 200, "own private feed");
     expectProblem(await http("GET", `${host.base}/ilp/v1/events/${ev.id}/feed?since=0`), "NOT_FOUND", "anonymous private feed");
     return { own: 200, anonymous: 404, anonymous_register: `${anonPriv.status} ${anonPriv.json?.title}`, fixture: lp.fixture ?? null };
