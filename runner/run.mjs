@@ -18,6 +18,7 @@ import { LATE_ORDER, SG3_ORDER, SG3_TESTS } from "./tests-sg3.mjs";
 import { sleep } from "./lib.mjs";
 import { assemblePacket, checkExport, exportHostEvent, negativeCases, verifyPacket } from "./sg4.mjs";
 import { execFileSync } from "node:child_process";
+import { performance } from "node:perf_hooks";
 
 const args = Object.fromEntries(process.argv.slice(2).map((a, i, all) => (a.startsWith("--") ? [a.slice(2), all[i + 1]] : null)).filter(Boolean));
 const harness = args.harness ?? "http://127.0.0.1:4180";
@@ -116,6 +117,7 @@ async function runTests(ctx, ids) {
       const spec = byId[id];
       if (!spec) throw new Error(`test ${id} not in profile`);
       const started = Date.now();
+      const startedMono = performance.now();
       const r = { test_id: id, scenario: sc.id, repetition: rep, status: "pass", traces: spec.traces, started_at: new Date(started).toISOString(), elapsed_ms: 0, observations: {} };
       try {
         const obs = ALL[id].applies && !ALL[id].applies(ctx) ? null : await ALL[id](ctx);
@@ -125,7 +127,7 @@ async function runTests(ctx, ids) {
         r.status = "fail";
         r.failure = e instanceof TestFailure ? e.message : `${e.name}: ${e.message}`;
       }
-      r.elapsed_ms = Date.now() - started;
+      r.elapsed_ms = Math.floor(performance.now() - startedMono);
       results.push(r);
       log(`${r.status === "pass" ? "PASS" : r.status === "fail" ? "FAIL" : "N/A "} ${sc.id}.${rep} ${id}${r.failure ? ` — ${r.failure}` : ""}`);
     }
@@ -138,6 +140,7 @@ if (gate === "all" && lateCtxs.length) {
   const bundles = [];
   for (const ctx of lateCtxs) {
     const started = Date.now();
+      const startedMono = performance.now();
     const r = { test_id: "PC-EXP-1", scenario: ctx.scenario.id, repetition: ctx.rep, status: "pass", traces: byId["PC-EXP-1"].traces, started_at: new Date(started).toISOString(), elapsed_ms: 0, observations: {} };
     try {
       const b = await exportHostEvent(ctx);
@@ -147,7 +150,7 @@ if (gate === "all" && lateCtxs.length) {
       r.status = "fail";
       r.failure = e.message;
     }
-    r.elapsed_ms = Date.now() - started;
+    r.elapsed_ms = Math.floor(performance.now() - startedMono);
     results.push(r);
     log(`${r.status === "pass" ? "PASS" : "FAIL"} ${ctx.scenario.id}.${ctx.rep} PC-EXP-1${r.failure ? ` — ${r.failure}` : ""}`);
   }

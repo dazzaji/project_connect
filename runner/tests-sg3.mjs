@@ -1,5 +1,6 @@
 // SG-3 tests (full slice): core conventions, peering, directory, enforcement negatives, revocation, isolation.
 import { spawnSync } from "node:child_process";
+import { performance } from "node:perf_hooks";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -47,9 +48,9 @@ async function feedRecords(node) {
   return f.items.map((i) => verifyJws(i.jws, (kid) => d.keys.find((k) => k.kid === kid) ?? null, { typ: TYP.revocation }).payload);
 }
 async function waitFor(fn, { timeoutMs, stepMs = 1000 }) {
-  const end = Date.now() + timeoutMs;
+  const end = performance.now() + timeoutMs;
   let last;
-  while (Date.now() < end) {
+  while (performance.now() < end) {
     last = await fn();
     if (last.done) return last;
     await sleep(stepMs);
@@ -417,7 +418,8 @@ export const SG3_TESTS = {
     const v = await admit(ctx, E1, { label: "rev2" });
     expectOk(await act(ctx.host, E1, v.token, proposal("pre-revocation")), 201, "act before home revocation");
     const spare = expectOk(await http("POST", `${ctx.home.base}/ilp/v1/claims`, { bearer: ctx.creds.provisioning, body: { purpose: "event_join", event: ctx.events.E2.global_id, aud: ctx.host.base, agent: v.subject.agent.id, on_behalf_of: v.subject.human } }), 201, "spare claim").claim;
-    const t0 = Date.now();
+    const requestedAt = new Date().toISOString();
+    const t0 = performance.now();
     expectOk(await http("POST", `${ctx.home.base}/ilp/v1/admin/synthetic/agents/${local(v.subject.agent.id)}/revoke`, { bearer: ctx.creds.provisioning, body: { reason: "conformance" } }), 200, "home revokes agent");
     const bound = ctx.profile.parameters.revocation_bound_s;
     // poll the public, side-effect-free grant status until the host has applied the home's record
@@ -425,14 +427,15 @@ export const SG3_TESTS = {
       const s = await http("GET", v.payload.status.uri);
       return { done: s.json?.status === "revoked", s };
     }, { timeoutMs: bound * 1000 + 5000 });
-    const elapsed = Date.now() - t0;
+    const elapsed = performance.now() - t0;
     check(res.done, `host had not applied the home revocation ${Math.round(elapsed / 1000)} s later (grant status ${res.s?.json?.status})`);
     const before = await observe(ctx.host, E1.id);
     expectProblem(await act(ctx.host, E1, v.token, proposal("post-revocation")), ["AUTH_REVOKED", "GRANT_REVOKED"], "act after home revocation");
     await expectNoSideEffects(ctx.host, E1.id, before, "act after home revocation");
     check(elapsed <= bound * 1000, `propagation took ${elapsed} ms > bound ${bound} s`);
     await expectRefusal(ctx.host, ctx.events.E2.id, ctx.creds.operator.E2, () => http("POST", `${ctx.host.base}/ilp/v1/events/${ctx.events.E2.id}/join-requests`, { body: { claim: spare } }), "SUBJECT_REVOKED", "join by a revoked subject");
-    return { propagation_ms: elapsed, bound_s: bound };
+    // F1 (219): the bound check above uses the RAW monotonic elapsed; the recorded value is integer ms (strict packet JSON)
+    return { propagation_ms: Math.floor(elapsed), bound_s: bound, elapsed_clock: "monotonic", requested_at: requestedAt, grant_iat: v.payload.iat, grant_exp: v.payload.exp };
   },
   async "PC-REV-3"(ctx) {
     const E1 = ctx.events.E1;
@@ -485,7 +488,9 @@ export const SG3_TESTS = {
     const waitS = ctx.profile.parameters.fail_closed_after_s + 15;
     const out = {};
     try {
+      const outageStarted = performance.now();
       await sleep(waitS * 1000);
+      out.outage_elapsed_ms = Math.floor(performance.now() - outageStarted); // F1 (219): integer ms for the strict packet parser
       const j = await expectRefusal(ctx.host, ctx.events.E2.id, ctx.creds.operator.E2, () => http("POST", `${ctx.host.base}/ilp/v1/events/${ctx.events.E2.id}/join-requests`, { body: { claim: fresh } }), "REVOCATION_STATE_UNKNOWN", "join after 2 × bound without home refresh");
       const pj = expectProblem(j, "REVOCATION_STATE_UNKNOWN", "join after 2 × bound without home refresh");
       check(j.status === 503 && Number.isInteger(pj.retry_after), "fail-closed response must be 503 with retry_after");
