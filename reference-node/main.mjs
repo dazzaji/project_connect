@@ -7,6 +7,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateKey } from "../lib/jws.mjs";
+import { validateAt } from "../lib/schemas.mjs";
 import { serve } from "./http.mjs";
 import { createNode } from "./node.mjs";
 
@@ -32,11 +33,9 @@ try {
     if (typeof k.kid !== "string" || !k.kid) throw new Error("a key has no kid");
     if (kids.has(k.kid)) throw new Error(`duplicate kid ${k.kid}`);
     kids.add(k.kid);
-    // not_after must be a calendar-valid RFC 3339 date-time (the discovery schema's date-time): Date.parse alone accepts Feb 31
-    if (k.not_after !== undefined) {
-      const d = new Date(k.not_after);
-      if (typeof k.not_after !== "string" || Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== k.not_after.slice(0, 10)) throw new Error(`key ${k.kid} not_after is not a calendar-valid date-time`);
-    }
+    // not_after is exactly the frozen discovery schema's member (format date-time under this repo's Ajv): offsets crossing
+    // UTC midnight are valid, calendar-invalid dates are not (SG2R5-NOT-AFTER); format validity only, not an expiry rule
+    if (k.not_after !== undefined && !validateAt("discovery", "/properties/keys/items/properties/not_after", k.not_after)) throw new Error(`key ${k.kid} not_after is not a calendar-valid date-time`);
     const derived = createPublicKey(createPrivateKey({ key: { kty: "OKP", crv: "Ed25519", d: k.d, x: k.x }, format: "jwk" })).export({ format: "jwk" });
     if (derived.crv !== "Ed25519" || derived.x !== k.x || Buffer.from(k.d, "base64url").length !== 32) throw new Error(`key ${k.kid} is not a consistent Ed25519 key pair`);
   }
