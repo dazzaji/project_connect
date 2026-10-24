@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ilp:schema:revocation-record:v1",
+  "title": "ILP revocation record — payload of an ilp-revocation+jwt (R-FED-10)",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x_": {}
+  },
+  "required": [
+    "iss",
+    "jti",
+    "iat",
+    "kind",
+    "subject",
+    "revoked_at",
+    "seq"
+  ],
+  "properties": {
+    "iss": {
+      "type": "string",
+      "pattern": "^https?://[a-z0-9.-]+(:[0-9]{1,5})?$",
+      "$comment": "scheme + host [+ port], no path"
+    },
+    "jti": {
+      "type": "string",
+      "pattern": "^ilp:[a-z0-9.-]+:revocation:[A-Za-z0-9-]+$"
+    },
+    "iat": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "kind": {
+      "enum": [
+        "claim",
+        "human",
+        "agent",
+        "plate",
+        "grant",
+        "peer"
+      ]
+    },
+    "subject": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "revoked_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "reinstated": {
+      "type": "boolean",
+      "$comment": "SCR-4: true on a peer record that lifts an earlier suspension"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    }
+  }
+}

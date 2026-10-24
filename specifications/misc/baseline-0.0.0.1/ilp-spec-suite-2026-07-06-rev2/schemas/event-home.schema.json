@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ilp:schema:event-home:v1",
+  "title": "ILP Event Home object (GET /ilp/v1/events/{id})",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "slug", "title", "pack", "status", "visibility", "policy", "rounds", "counts", "links", "seq"],
+  "properties": {
+    "id": { "$ref": "#/$defs/globalId" },
+    "slug": { "type": "string" },
+    "title": { "type": "string" },
+    "description": { "type": "string" },
+    "pack": {
+      "type": "object", "additionalProperties": false, "required": ["id", "version"],
+      "properties": { "id": { "type": "string" }, "version": { "type": "string" } }
+    },
+    "status": { "enum": ["draft", "open", "live", "closed", "archived"] },
+    "visibility": { "enum": ["private", "public", "federated"] },
+    "starts_at": { "type": ["string", "null"], "format": "date-time" },
+    "home": {
+      "type": "object", "additionalProperties": false,
+      "properties": { "host": { "type": "string" }, "api": { "type": "string", "format": "uri" } },
+      "$comment": "present in directory contexts; identifies the home instance"
+    },
+    "policy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["identity_required", "publication_consent_required"],
+      "properties": {
+        "identity_required": { "type": "boolean" },
+        "publication_consent_required": { "type": "boolean" },
+        "consent_version": { "type": ["string", "null"] },
+        "license_id": { "type": ["string", "null"] },
+        "registration_approval": { "enum": ["operator", "auto"] },
+        "remote_participants": { "enum": ["allowed", "denied"] }
+      }
+    },
+    "current_round": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["id", "number", "phase", "phase_changed_at"],
+      "properties": {
+        "id": { "type": "string" },
+        "number": { "type": "integer", "minimum": 1 },
+        "phase": { "type": "string" },
+        "phase_label": { "type": "string" },
+        "phase_changed_at": { "type": "string", "format": "date-time" },
+        "phase_deadline": { "type": ["string", "null"], "format": "date-time" },
+        "grace_until": { "type": ["string", "null"], "format": "date-time" },
+        "gates": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["to", "kind"],
+            "properties": { "to": { "type": "string" }, "kind": { "enum": ["operator", "timer", "count", "decision"] }, "ready": { "type": "boolean" } }
+          }
+        },
+        "params": { "type": "object" },
+        "my": {
+          "type": "object",
+          "additionalProperties": false,
+          "$comment": "present only on credentialed requests; values MUST be enforcement-accurate (R-EV-3)",
+          "properties": {
+            "role": { "type": "string" },
+            "allowed_actions": { "type": "array", "items": { "type": "string" } },
+            "votes_remaining": { "type": ["integer", "null"] },
+            "caps": { "type": "object", "additionalProperties": { "type": ["integer", "null"] } },
+            "consent_required": { "type": "boolean" },
+            "registration_status": { "enum": ["none", "pending", "active", "rejected", "revoked"] }
+          }
+        },
+        "pack_block": { "type": "object", "$comment": "pack-specific live state; shape per pack surface_templates.event_home_block_schema" }
+      }
+    },
+    "rounds": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["number", "phase"],
+        "properties": { "number": { "type": "integer" }, "phase": { "type": "string" }, "closed": { "type": "boolean" } }
+      }
+    },
+    "counts": {
+      "type": "object", "additionalProperties": false,
+      "required": ["registrations", "actions"],
+      "properties": {
+        "registrations": { "type": "integer" },
+        "pending": { "type": "integer" },
+        "actions": { "type": "integer" }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "role"],
+        "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "role": { "type": "string" }, "frozen": { "type": "boolean" } }
+      }
+    },
+    "links": {
+      "type": "object",
+      "required": ["skill", "feed", "receipts"],
+      "properties": {
+        "skill": { "type": "string" }, "feed": { "type": "string" },
+        "receipts": { "type": "string" }, "export": { "type": "string" }
+      },
+      "additionalProperties": { "type": "string" }
+    },
+    "seq": { "type": "integer", "minimum": 0, "$comment": "current feed head for this event" }
+  },
+  "$defs": {
+    "globalId": { "type": "string", "pattern": "^ilp:[a-z0-9.-]+:[a-z_]+:[A-Za-z0-9-]+$" }
+  }
+}

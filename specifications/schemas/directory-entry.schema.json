@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ilp:schema:directory-entry:v1",
+  "title": "ILP federated directory entry (R-FED-5, R-FED-19)",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x_": {}
+  },
+  "required": [
+    "global_id",
+    "slug",
+    "title",
+    "description",
+    "pack",
+    "status",
+    "starts_at",
+    "policy",
+    "home",
+    "updated_at"
+  ],
+  "properties": {
+    "global_id": {
+      "type": "string",
+      "pattern": "^ilp:[a-z0-9.-]+:event:[A-Za-z0-9-]+$"
+    },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,78}[a-z0-9]$"
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "description": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 5000
+    },
+    "pack": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x_": {}
+      },
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "known": {
+          "type": "boolean"
+        }
+      }
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "open",
+        "live",
+        "closed",
+        "archived"
+      ]
+    },
+    "starts_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x_": {}
+      },
+      "required": [
+        "identity_required",
+        "remote_participants"
+      ],
+      "properties": {
+        "identity_required": {
+          "type": "boolean"
+        },
+        "remote_participants": {
+          "enum": [
+            "allowed",
+            "denied"
+          ]
+        }
+      }
+    },
+    "home": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {
+        "^x_": {}
+      },
+      "required": [
+        "host",
+        "api"
+      ],
+      "properties": {
+        "host": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$",
+          "maxLength": 253
+        },
+        "api": {
+          "type": "string",
+          "pattern": "^https?://[^\\s]+$"
+        }
+      }
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

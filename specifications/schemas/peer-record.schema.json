@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ilp:schema:peer-record:v1",
+  "title": "ILP peer record — GET /ilp/v1/federation/peers items (R-FED-3, R-FED-4, R-FED-15)",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x_": {}
+  },
+  "required": [
+    "host",
+    "base_url",
+    "state",
+    "spec_versions",
+    "common_spec_versions",
+    "updated_at"
+  ],
+  "properties": {
+    "host": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$",
+      "maxLength": 253
+    },
+    "base_url": {
+      "type": "string",
+      "pattern": "^https?://[a-z0-9.-]+(:[0-9]{1,5})?$",
+      "$comment": "scheme + host [+ port], no path"
+    },
+    "state": {
+      "enum": [
+        "proposed",
+        "active",
+        "suspended",
+        "removed"
+      ]
+    },
+    "spec_versions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+      }
+    },
+    "common_spec_versions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+      },
+      "$comment": "an empty array surfaces a version mismatch (R-FED-15)"
+    },
+    "discovery_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "policy_url": {
+      "type": "string",
+      "pattern": "^https?://[^\\s]+$"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "project-connect",
+  "version": "0.0.2",
+  "private": true,
+  "description": "Interlateral Protocol specification, conformance profile, vectors, reference node, runner, and offline verifier",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs && node --test --test-concurrency=1 tests/service/*.test.mjs",
+    "vectors": "node tools/gen-vectors.mjs",
+    "schemas": "node tools/gen-schemas.mjs"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
+  }
+}

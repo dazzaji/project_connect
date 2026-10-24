@@ -93,3 +93,22 @@ and two-node demonstration plan will be developed in this repository.
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE).
+
+## Repository layout
+
+| Path | Contents |
+|---|---|
+| `specifications/ilp_spec.md` | The Interlateral Protocol specification (working draft, currently `0.0.2`) |
+| `specifications/schemas/` | Strict JSON Schemas (Draft 2020-12) for every wire-visible object |
+| `specifications/releases/` | Release records pinning every normative artifact by SHA-256 |
+| `profile/pc-0.1-s1.json` | The **candidate** slice-1 conformance profile: tests, scenarios, parameters, exclusions, actors, interfaces |
+| `vectors/` | Canonicalization, JWS, receipt-chain, and detached-signature test vectors (deterministic; `npm run vectors`) |
+| `lib/` | Minimal reference library: JCS, EdDSA JWS, receipt hashing, schema validation |
+| `reference-node/` | A spec-derived reference node (home and host roles) used as a test counterpart |
+| `runner/` | The black-box conformance runner |
+| `verifier/` | `pc-verify`, the standalone offline evidence-packet verifier |
+| `tools/` | Generators for schemas, vectors, the profile, and release records |
+
+Run `npm install && npm test` to check the library against every vector.
+
+Results against `0.0.x` are **exploratory**. They are not frozen-profile conformance and not certification.

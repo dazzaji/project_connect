@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ilp:schema:export-manifest:v1",
+  "title": "ILP Export bundle manifest (manifest.json, R-EV-25)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "event", "created_at", "created_by", "instance", "files", "receipts_head_hash", "consent_versions", "signature"],
+  "properties": {
+    "format": { "const": "ilp-export/1" },
+    "event": { "$ref": "#/$defs/globalId" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "created_by": { "$ref": "#/$defs/globalId", "$comment": "operator human global id" },
+    "instance": {
+      "type": "object", "additionalProperties": false, "required": ["host", "kid"],
+      "properties": {
+        "host": { "type": "string" },
+        "kid": { "type": "string", "$comment": "key id in the instance discovery doc that verifies `signature`" }
+      }
+    },
+    "files": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["path", "sha256", "bytes"],
+        "properties": {
+          "path": { "type": "string", "$comment": "relative within bundle: event.json, definition.yaml, actions.jsonl, decisions.json, registrations.json, receipts.jsonl, feed.jsonl, artifacts/…" },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "bytes": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "receipts_head_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$", "$comment": "hash of the last receipt in the chain at export time" },
+    "consent_versions": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["kind", "text_version", "text_sha256"],
+        "properties": {
+          "kind": { "type": "string" },
+          "text_version": { "type": "string" },
+          "text_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "license_id": { "type": "string" }
+        }
+      }
+    },
+    "remote_origins": {
+      "type": "array",
+      "items": { "type": "string" },
+      "$comment": "hosts whose discovery keys a verifier needs to validate remote-subject attestations (R-FED-9)"
+    },
+    "signature": { "type": "string", "$comment": "Ed25519 over RFC 8785 canonical JSON of the manifest without this field, base64url" }
+  },
+  "$defs": {
+    "globalId": { "type": "string", "pattern": "^ilp:[a-z0-9.-]+:[a-z_]+:[A-Za-z0-9-]+$" }
+  }
+}

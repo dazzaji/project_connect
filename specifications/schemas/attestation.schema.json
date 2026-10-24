@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ilp:schema:attestation:v1",
+  "title": "ILP attestation — payload of an ilp-attestation+jwt over an evidence packet content root (R-CORE-36(a))",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x_": {}
+  },
+  "required": [
+    "iss",
+    "jti",
+    "iat",
+    "role",
+    "content_root",
+    "profile",
+    "build"
+  ],
+  "properties": {
+    "iss": {
+      "type": "string",
+      "minLength": 1,
+      "$comment": "node base URL, or runner:<id>"
+    },
+    "jti": {
+      "type": "string",
+      "minLength": 1
+    },
+    "iat": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "role": {
+      "enum": [
+        "node",
+        "runner",
+        "verifier"
+      ]
+    },
+    "content_root": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "profile": {
+      "type": "string"
+    },
+    "build": {
+      "type": "string"
+    },
+    "statement": {
+      "type": "string",
+      "maxLength": 2000
+    }
+  }
+}

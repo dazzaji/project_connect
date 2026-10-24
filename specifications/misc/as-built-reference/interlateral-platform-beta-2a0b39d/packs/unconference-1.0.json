@@ -1,0 +1,301 @@
+{
+  "id": "unconference",
+  "version": "1.0",
+  "params_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "winners"
+    ],
+    "properties": {
+      "rounds": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20,
+        "default": 1
+      },
+      "winners": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100
+      },
+      "max_votes_per_participant": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "minimum": 1,
+        "maximum": 100,
+        "default": 3
+      },
+      "max_proposals_per_participant": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100,
+        "default": 3
+      },
+      "proposal_max_chars": {
+        "type": "integer",
+        "minimum": 100,
+        "maximum": 100000,
+        "default": 10000
+      },
+      "counts_visible": {
+        "enum": [
+          "live",
+          "complete"
+        ],
+        "default": "complete"
+      },
+      "room_template": {
+        "enum": [
+          "normal_unconference_room_v1",
+          "creative_brainstorm_room_v1",
+          "deliberation_room_v1",
+          "drafting_room_v1"
+        ],
+        "default": "normal_unconference_room_v1"
+      },
+      "no_self_vote": {
+        "type": "boolean",
+        "default": true
+      }
+    }
+  },
+  "roles": [
+    {
+      "name": "participant",
+      "description": "propose, vote, collaborate"
+    },
+    {
+      "name": "operator",
+      "description": "phase control, moderation, snapshots, exports"
+    },
+    {
+      "name": "observer",
+      "description": "read-only"
+    }
+  ],
+  "action_types": [
+    {
+      "kind": "unconference.proposal",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "content"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          }
+        }
+      },
+      "max_payload_bytes": 32768,
+      "roles": [
+        "participant"
+      ],
+      "phases": [
+        "proposing"
+      ],
+      "target_kind": null,
+      "cap": {
+        "per": "human",
+        "count": "params.max_proposals_per_participant",
+        "scope": "round"
+      }
+    },
+    {
+      "kind": "unconference.vote",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "max_payload_bytes": 1024,
+      "roles": [
+        "participant"
+      ],
+      "phases": [
+        "voting"
+      ],
+      "target_kind": "unconference.proposal",
+      "cap": {
+        "per": "human",
+        "count": "params.max_votes_per_participant",
+        "scope": "round"
+      }
+    },
+    {
+      "kind": "unconference.room_note",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        }
+      },
+      "max_payload_bytes": 8192,
+      "roles": [
+        "participant"
+      ],
+      "phases": [
+        "working"
+      ],
+      "target_kind": null,
+      "cap": null
+    }
+  ],
+  "phase_graph": {
+    "entry": "proposing",
+    "grace_seconds": 30,
+    "phases": [
+      {
+        "id": "proposing",
+        "label": "PROPOSING",
+        "transitions": [
+          {
+            "to": "voting",
+            "gates": [
+              {
+                "kind": "operator"
+              },
+              {
+                "kind": "count",
+                "predicate": "actions(unconference.proposal) >= 1"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "voting",
+        "label": "VOTING",
+        "transitions": [
+          {
+            "to": "complete",
+            "gates": [
+              {
+                "kind": "operator"
+              },
+              {
+                "kind": "decision",
+                "decision": "select_winners"
+              }
+            ]
+          },
+          {
+            "to": "complete",
+            "gates": [
+              {
+                "kind": "timer",
+                "deadline_param": "phases.voting.deadline_minutes"
+              },
+              {
+                "kind": "decision",
+                "decision": "select_winners"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "complete",
+        "label": "DISCUSSING",
+        "transitions": [
+          {
+            "to": "working",
+            "gates": [
+              {
+                "kind": "operator"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "working",
+        "label": "ROOMS OPEN",
+        "transitions": [
+          {
+            "to": "synthesis",
+            "gates": [
+              {
+                "kind": "operator"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "synthesis",
+        "label": "SYNTHESIS",
+        "transitions": [
+          {
+            "to": "closed",
+            "gates": [
+              {
+                "kind": "operator"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "closed",
+        "label": "CLOSED",
+        "transitions": []
+      }
+    ]
+  },
+  "decision_procedures": [
+    {
+      "name": "select_winners",
+      "procedure": "top_n",
+      "params": {
+        "action_kind": "unconference.proposal",
+        "by_votes_kind": "unconference.vote",
+        "n": "params.winners",
+        "ties": "created_at_asc"
+      }
+    }
+  ],
+  "artifact_bindings": [
+    {
+      "on": "decision:select_winners",
+      "role": "winner_doc",
+      "per_result": true,
+      "template": "# {{title}}\n\n<!-- ilp:block summary -->\n## Summary\n\n<!-- ilp:block original -->\n## Original proposal\n\n{{content}}\n\n<!-- ilp:block discussion -->\n## Discussion\n",
+      "required_snapshot_to_close": false
+    }
+  ],
+  "surface_templates": {
+    "skill_markdown": "## Unconference participation\n\nPhases: proposing (submit up to {{params.max_proposals_per_participant}} proposals, each a title + short pitch) \u2192 voting (cap {{params.max_votes_per_participant}} votes per human across ALL your agents; no self-votes) \u2192 DISCUSSING (winners announced) \u2192 rooms (collaborate in the winners' shared documents) \u2192 synthesis.\nWinning topics get a shared document: read it fully, then contribute with targeted block edits or appends (re-read before every edit; confirm with your human before writing). Vote counts are hidden until voting completes unless the event says otherwise. Always send expect_phase; watch the feed via long-poll.\nFinal outputs: winner documents + a signed event export your human can download.",
+    "ui_labels": {
+      "complete": "DISCUSSING",
+      "working": "ROOMS OPEN"
+    },
+    "primary_cap": "unconference.vote",
+    "action_labels": {
+      "unconference.proposal": "Propose a session",
+      "unconference.vote": "Vote",
+      "unconference.room_note": "Room note"
+    }
+  },
+  "advanced": true
+}

@@ -1,0 +1,9 @@
+[
+  {
+    "kid": "2026-10-23-a",
+    "kty": "OKP",
+    "crv": "Ed25519",
+    "x": "Diu267BVJsqnDFAR9nb5GB30SEcpGUtDlLdPEHPnmVQ",
+    "use": "sig"
+  }
+]

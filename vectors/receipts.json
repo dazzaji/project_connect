@@ -1,0 +1,447 @@
+{
+  "genesis": "0000000000000000000000000000000000000000000000000000000000000000",
+  "hash_body_rule": "R-CORE-40: subject_agent and license_plate present (null when absent); source_class and authorization_grant omitted when absent",
+  "good": {
+    "id": "RCPT-GOOD-1",
+    "chain": [
+      {
+        "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000001",
+        "action_kind": "engine.event_created",
+        "subject_human": "ilp:host.example:human:00000000-0000-7000-8000-0000000000aa",
+        "subject_agent": null,
+        "license_plate": null,
+        "mandate": "human_directed",
+        "source_class": "engine",
+        "resource": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+        "occurred_at": "2026-09-27T12:00:00.000Z",
+        "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+        "prev_receipt_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+        "hash": "c922a9de60425cf2737097232b9ef275a00e58d97ae5389e08051e203a887e63"
+      },
+      {
+        "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000002",
+        "action_kind": "federation.grant_issued",
+        "subject_human": "ilp:home.example:human:0192a1b3-5c6d-7e8f-9a0b-1c2d3e4f5a6b",
+        "subject_agent": "ilp:home.example:agent:0192a1b3-aaaa-7bbb-8ccc-1d2e3f4a5b6c",
+        "license_plate": "IL-7Q3K2M9P",
+        "mandate": "human_directed",
+        "source_class": "engine",
+        "authorization_grant": "ilp:host.example:grant:0192f0c2-7e1a-7b4e-9a55-3c1f0e2d4b61",
+        "resource": "ilp:host.example:grant:0192f0c2-7e1a-7b4e-9a55-3c1f0e2d4b61",
+        "occurred_at": "2026-09-27T12:00:05.000Z",
+        "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+        "prev_receipt_hash": "c922a9de60425cf2737097232b9ef275a00e58d97ae5389e08051e203a887e63",
+        "hash": "d583574c0815bfd258cc71e635d55ae58697306f9be6871637251e7c41e8f9b7"
+      },
+      {
+        "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000003",
+        "action_kind": "unconference.proposal",
+        "subject_human": "ilp:home.example:human:0192a1b3-5c6d-7e8f-9a0b-1c2d3e4f5a6b",
+        "subject_agent": "ilp:home.example:agent:0192a1b3-aaaa-7bbb-8ccc-1d2e3f4a5b6c",
+        "license_plate": "IL-7Q3K2M9P",
+        "mandate": "human_directed",
+        "source_class": "agent_token_api",
+        "authorization_grant": "ilp:host.example:grant:0192f0c2-7e1a-7b4e-9a55-3c1f0e2d4b61",
+        "resource": "ilp:host.example:action:00000000-0000-7000-8000-00000000a001",
+        "occurred_at": "2026-09-27T12:00:09.000Z",
+        "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+        "prev_receipt_hash": "d583574c0815bfd258cc71e635d55ae58697306f9be6871637251e7c41e8f9b7",
+        "hash": "537c43f3b9f51e1f219f8def73dbdc449ba9d637e668590a9486eeaec1768362"
+      },
+      {
+        "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000004",
+        "action_kind": "engine.legacy",
+        "subject_human": "ilp:host.example:human:00000000-0000-7000-8000-0000000000aa",
+        "subject_agent": null,
+        "license_plate": null,
+        "mandate": "human_directed",
+        "resource": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+        "occurred_at": "2026-09-27T12:00:10.000Z",
+        "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+        "prev_receipt_hash": "537c43f3b9f51e1f219f8def73dbdc449ba9d637e668590a9486eeaec1768362",
+        "hash": "409717ef3ac428f4ff2fe6d159a9c32ce3ae132a30f30f5907ecaca6c5b58dbd"
+      }
+    ],
+    "head": "409717ef3ac428f4ff2fe6d159a9c32ce3ae132a30f30f5907ecaca6c5b58dbd"
+  },
+  "bad": [
+    {
+      "id": "RCPT-BAD-1",
+      "chain": [
+        {
+          "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000001",
+          "action_kind": "engine.event_created",
+          "subject_human": "ilp:host.example:human:00000000-0000-7000-8000-0000000000aa",
+          "subject_agent": null,
+          "license_plate": null,
+          "mandate": "human_directed",
+          "source_class": "engine",
+          "resource": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "occurred_at": "2026-09-27T12:00:00.000Z",
+          "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "prev_receipt_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "c922a9de60425cf2737097232b9ef275a00e58d97ae5389e08051e203a887e63"
+        },
+        {
+          "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000002",
+          "action_kind": "federation.grant_issued",
+          "subject_human": "ilp:home.example:human:0192a1b3-5c6d-7e8f-9a0b-1c2d3e4f5a6b",
+          "subject_agent": "ilp:home.example:agent:0192a1b3-aaaa-7bbb-8ccc-1d2e3f4a5b6c",
+          "license_plate": "IL-7Q3K2M9P",
+          "mandate": "human_directed",
+          "source_class": "engine",
+          "authorization_grant": "ilp:host.example:grant:0192f0c2-7e1a-7b4e-9a55-3c1f0e2d4b61",
+          "resource": "ilp:host.example:grant:0192f0c2-7e1a-7b4e-9a55-3c1f0e2d4b61",
+          "occurred_at": "2026-09-27T12:00:05.000Z",
+          "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "prev_receipt_hash": "c922a9de60425cf2737097232b9ef275a00e58d97ae5389e08051e203a887e63",
+          "hash": "d583574c0815bfd258cc71e635d55ae58697306f9be6871637251e7c41e8f9b7"
+        },
+        {
+          "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000003",
+          "action_kind": "unconference.proposal",
+          "subject_human": "ilp:home.example:human:0192a1b3-5c6d-7e8f-9a0b-1c2d3e4f5a6b",
+          "subject_agent": "ilp:home.example:agent:0192a1b3-aaaa-7bbb-8ccc-1d2e3f4a5b6c",
+          "license_plate": "IL-7Q3K2M9P",
+          "mandate": "human_directed",
+          "source_class": "agent_token_api",
+          "authorization_grant": "ilp:host.example:grant:0192f0c2-7e1a-7b4e-9a55-3c1f0e2d4b61",
+          "occurred_at": "2026-09-27T12:00:09.000Z",
+          "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "prev_receipt_hash": "d583574c0815bfd258cc71e635d55ae58697306f9be6871637251e7c41e8f9b7",
+          "hash": "537c43f3b9f51e1f219f8def73dbdc449ba9d637e668590a9486eeaec1768362",
+          "resource_global_id": "ilp:host.example:action:00000000-0000-7000-8000-00000000a001"
+        },
+        {
+          "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000004",
+          "action_kind": "engine.legacy",
+          "subject_human": "ilp:host.example:human:00000000-0000-7000-8000-0000000000aa",
+          "subject_agent": null,
+          "license_plate": null,
+          "mandate": "human_directed",
+          "resource": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "occurred_at": "2026-09-27T12:00:10.000Z",
+          "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "prev_receipt_hash": "537c43f3b9f51e1f219f8def73dbdc449ba9d637e668590a9486eeaec1768362",
+          "hash": "409717ef3ac428f4ff2fe6d159a9c32ce3ae132a30f30f5907ecaca6c5b58dbd"
+        }
+      ],
+      "expect": "reject",
+      "note": "wire member resource_global_id instead of resource (K-21)"
+    },
+    {
+      "id": "RCPT-BAD-2",
+      "chain": [
+        {
+          "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000001",
+          "action_kind": "engine.event_created",
+          "subject_human": "ilp:host.example:human:00000000-0000-7000-8000-0000000000aa",
+          "subject_agent": null,
+          "license_plate": null,
+          "mandate": "human_directed",
+          "source_class": "engine",
+          "resource": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "occurred_at": "2026-09-27T12:00:00.000Z",
+          "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "prev_receipt_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "c922a9de60425cf2737097232b9ef275a00e58d97ae5389e08051e203a887e63"
+        },
+        {
+          "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000002",
+          "action_kind": "federation.grant_issued",
+          "subject_human": "ilp:home.example:human:0192a1b3-5c6d-7e8f-9a0b-1c2d3e4f5a6b",
+          "subject_agent": "ilp:home.example:agent:0192a1b3-aaaa-7bbb-8ccc-1d2e3f4a5b6c",
+          "license_plate": "IL-7Q3K2M9P",
+          "mandate": "human_directed",
+          "source_class": "engine",
+          "authorization_grant": "ilp:host.example:grant:0192f0c2-7e1a-7b4e-9a55-3c1f0e2d4b61",
+          "resource": "ilp:host.example:grant:0192f0c2-7e1a-7b4e-9a55-3c1f0e2d4b61",
+          "occurred_at": "2026-09-27T12:00:05.000Z",
+          "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "prev_receipt_hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "hash": "d583574c0815bfd258cc71e635d55ae58697306f9be6871637251e7c41e8f9b7"
+        },
+        {
+          "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000003",
+          "action_kind": "unconference.proposal",
+          "subject_human": "ilp:home.example:human:0192a1b3-5c6d-7e8f-9a0b-1c2d3e4f5a6b",
+          "subject_agent": "ilp:home.example:agent:0192a1b3-aaaa-7bbb-8ccc-1d2e3f4a5b6c",
+          "license_plate": "IL-7Q3K2M9P",
+          "mandate": "human_directed",
+          "source_class": "agent_token_api",
+          "authorization_grant": "ilp:host.example:grant:0192f0c2-7e1a-7b4e-9a55-3c1f0e2d4b61",
+          "resource": "ilp:host.example:action:00000000-0000-7000-8000-00000000a001",
+          "occurred_at": "2026-09-27T12:00:09.000Z",
+          "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "prev_receipt_hash": "d583574c0815bfd258cc71e635d55ae58697306f9be6871637251e7c41e8f9b7",
+          "hash": "537c43f3b9f51e1f219f8def73dbdc449ba9d637e668590a9486eeaec1768362"
+        },
+        {
+          "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000004",
+          "action_kind": "engine.legacy",
+          "subject_human": "ilp:host.example:human:00000000-0000-7000-8000-0000000000aa",
+          "subject_agent": null,
+          "license_plate": null,
+          "mandate": "human_directed",
+          "resource": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "occurred_at": "2026-09-27T12:00:10.000Z",
+          "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "prev_receipt_hash": "537c43f3b9f51e1f219f8def73dbdc449ba9d637e668590a9486eeaec1768362",
+          "hash": "409717ef3ac428f4ff2fe6d159a9c32ce3ae132a30f30f5907ecaca6c5b58dbd"
+        }
+      ],
+      "expect": "reject",
+      "note": "broken link"
+    },
+    {
+      "id": "RCPT-BAD-3",
+      "chain": [
+        {
+          "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000001",
+          "action_kind": "engine.event_created",
+          "subject_human": "ilp:host.example:human:00000000-0000-7000-8000-0000000000aa",
+          "subject_agent": null,
+          "license_plate": null,
+          "mandate": "human_directed",
+          "source_class": "engine",
+          "resource": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "occurred_at": "2026-09-27T12:00:00.000Z",
+          "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "prev_receipt_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "c922a9de60425cf2737097232b9ef275a00e58d97ae5389e08051e203a887e63"
+        },
+        {
+          "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000002",
+          "action_kind": "federation.grant_issued",
+          "subject_human": "ilp:home.example:human:0192a1b3-5c6d-7e8f-9a0b-1c2d3e4f5a6b",
+          "subject_agent": "ilp:home.example:agent:0192a1b3-aaaa-7bbb-8ccc-1d2e3f4a5b6c",
+          "license_plate": "IL-7Q3K2M9P",
+          "mandate": "human_directed",
+          "source_class": "engine",
+          "authorization_grant": "ilp:host.example:grant:0192f0c2-7e1a-7b4e-9a55-3c1f0e2d4b61",
+          "resource": "ilp:host.example:grant:0192f0c2-7e1a-7b4e-9a55-3c1f0e2d4b61",
+          "occurred_at": "2026-09-27T12:00:05.000Z",
+          "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "prev_receipt_hash": "c922a9de60425cf2737097232b9ef275a00e58d97ae5389e08051e203a887e63",
+          "hash": "d583574c0815bfd258cc71e635d55ae58697306f9be6871637251e7c41e8f9b7"
+        },
+        {
+          "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000003",
+          "action_kind": "unconference.proposal",
+          "subject_human": "ilp:home.example:human:0192a1b3-5c6d-7e8f-9a0b-1c2d3e4f5a6b",
+          "subject_agent": "ilp:home.example:agent:0192a1b3-aaaa-7bbb-8ccc-1d2e3f4a5b6c",
+          "license_plate": "IL-7Q3K2M9P",
+          "mandate": "standing_instruction",
+          "source_class": "agent_token_api",
+          "authorization_grant": "ilp:host.example:grant:0192f0c2-7e1a-7b4e-9a55-3c1f0e2d4b61",
+          "resource": "ilp:host.example:action:00000000-0000-7000-8000-00000000a001",
+          "occurred_at": "2026-09-27T12:00:09.000Z",
+          "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "prev_receipt_hash": "d583574c0815bfd258cc71e635d55ae58697306f9be6871637251e7c41e8f9b7",
+          "hash": "537c43f3b9f51e1f219f8def73dbdc449ba9d637e668590a9486eeaec1768362"
+        },
+        {
+          "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000004",
+          "action_kind": "engine.legacy",
+          "subject_human": "ilp:host.example:human:00000000-0000-7000-8000-0000000000aa",
+          "subject_agent": null,
+          "license_plate": null,
+          "mandate": "human_directed",
+          "resource": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "occurred_at": "2026-09-27T12:00:10.000Z",
+          "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "prev_receipt_hash": "537c43f3b9f51e1f219f8def73dbdc449ba9d637e668590a9486eeaec1768362",
+          "hash": "409717ef3ac428f4ff2fe6d159a9c32ce3ae132a30f30f5907ecaca6c5b58dbd"
+        }
+      ],
+      "expect": "reject",
+      "note": "hashed member altered"
+    },
+    {
+      "id": "RCPT-BAD-4",
+      "chain": [
+        {
+          "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000001",
+          "action_kind": "engine.event_created",
+          "subject_human": "ilp:host.example:human:00000000-0000-7000-8000-0000000000aa",
+          "subject_agent": null,
+          "license_plate": null,
+          "mandate": "human_directed",
+          "source_class": "engine",
+          "resource": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "occurred_at": "2026-09-27T12:00:00.000Z",
+          "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "prev_receipt_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "c922a9de60425cf2737097232b9ef275a00e58d97ae5389e08051e203a887e63"
+        },
+        {
+          "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000002",
+          "action_kind": "federation.grant_issued",
+          "subject_human": "ilp:home.example:human:0192a1b3-5c6d-7e8f-9a0b-1c2d3e4f5a6b",
+          "subject_agent": "ilp:home.example:agent:0192a1b3-aaaa-7bbb-8ccc-1d2e3f4a5b6c",
+          "license_plate": "IL-7Q3K2M9P",
+          "mandate": "human_directed",
+          "source_class": "engine",
+          "authorization_grant": "ilp:host.example:grant:0192f0c2-7e1a-7b4e-9a55-3c1f0e2d4b61",
+          "resource": "ilp:host.example:grant:0192f0c2-7e1a-7b4e-9a55-3c1f0e2d4b61",
+          "occurred_at": "2026-09-27T12:00:05.000Z",
+          "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "prev_receipt_hash": "c922a9de60425cf2737097232b9ef275a00e58d97ae5389e08051e203a887e63",
+          "hash": "d583574c0815bfd258cc71e635d55ae58697306f9be6871637251e7c41e8f9b7"
+        },
+        {
+          "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000003",
+          "action_kind": "unconference.proposal",
+          "subject_human": "ilp:home.example:human:0192a1b3-5c6d-7e8f-9a0b-1c2d3e4f5a6b",
+          "subject_agent": "ilp:home.example:agent:0192a1b3-aaaa-7bbb-8ccc-1d2e3f4a5b6c",
+          "license_plate": "IL-7Q3K2M9P",
+          "mandate": "human_directed",
+          "source_class": "agent_token_api",
+          "authorization_grant": "ilp:host.example:grant:0192f0c2-7e1a-7b4e-9a55-3c1f0e2d4b61",
+          "resource": "ilp:host.example:action:00000000-0000-7000-8000-00000000a001",
+          "occurred_at": "2026-09-27T12:00:09.000Z",
+          "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "prev_receipt_hash": "d583574c0815bfd258cc71e635d55ae58697306f9be6871637251e7c41e8f9b7",
+          "hash": "537c43f3b9f51e1f219f8def73dbdc449ba9d637e668590a9486eeaec1768362"
+        },
+        {
+          "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000004",
+          "action_kind": "engine.legacy",
+          "subject_human": "ilp:host.example:human:00000000-0000-7000-8000-0000000000aa",
+          "subject_agent": null,
+          "license_plate": null,
+          "mandate": "human_directed",
+          "resource": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "occurred_at": "2026-09-27T12:00:10.000Z",
+          "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "prev_receipt_hash": "537c43f3b9f51e1f219f8def73dbdc449ba9d637e668590a9486eeaec1768362",
+          "hash": "409717ef3ac428f4ff2fe6d159a9c32ce3ae132a30f30f5907ecaca6c5b58dbd",
+          "source_class": null
+        }
+      ],
+      "expect": "schema_reject",
+      "note": "the hash body treats null as absent, so the chain still verifies; the strict receipt schema rejects null (R-CORE-39(a))"
+    },
+    {
+      "id": "RCPT-BAD-5",
+      "chain": [
+        {
+          "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000001",
+          "action_kind": "engine.event_created",
+          "subject_human": "ilp:host.example:human:00000000-0000-7000-8000-0000000000aa",
+          "subject_agent": null,
+          "license_plate": null,
+          "mandate": "human_directed",
+          "source_class": "engine",
+          "resource": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "occurred_at": "2026-09-27T12:00:00.000Z",
+          "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "prev_receipt_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "c922a9de60425cf2737097232b9ef275a00e58d97ae5389e08051e203a887e63"
+        },
+        {
+          "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000002",
+          "action_kind": "federation.grant_issued",
+          "subject_human": "ilp:home.example:human:0192a1b3-5c6d-7e8f-9a0b-1c2d3e4f5a6b",
+          "subject_agent": "ilp:home.example:agent:0192a1b3-aaaa-7bbb-8ccc-1d2e3f4a5b6c",
+          "license_plate": "IL-7Q3K2M9P",
+          "mandate": "human_directed",
+          "source_class": "engine",
+          "authorization_grant": "ilp:host.example:grant:0192f0c2-7e1a-7b4e-9a55-3c1f0e2d4b61",
+          "resource": "ilp:host.example:grant:0192f0c2-7e1a-7b4e-9a55-3c1f0e2d4b61",
+          "occurred_at": "2026-09-27T12:00:05.000Z",
+          "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "prev_receipt_hash": "c922a9de60425cf2737097232b9ef275a00e58d97ae5389e08051e203a887e63",
+          "hash": "d583574c0815bfd258cc71e635d55ae58697306f9be6871637251e7c41e8f9b7"
+        },
+        {
+          "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000003",
+          "action_kind": "unconference.proposal",
+          "subject_human": "ilp:home.example:human:0192a1b3-5c6d-7e8f-9a0b-1c2d3e4f5a6b",
+          "subject_agent": "ilp:home.example:agent:0192a1b3-aaaa-7bbb-8ccc-1d2e3f4a5b6c",
+          "license_plate": "IL-7Q3K2M9P",
+          "mandate": "human_directed",
+          "source_class": "agent_token_api",
+          "resource": "ilp:host.example:action:00000000-0000-7000-8000-00000000a001",
+          "occurred_at": "2026-09-27T12:00:09.000Z",
+          "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "prev_receipt_hash": "d583574c0815bfd258cc71e635d55ae58697306f9be6871637251e7c41e8f9b7",
+          "hash": "537c43f3b9f51e1f219f8def73dbdc449ba9d637e668590a9486eeaec1768362"
+        },
+        {
+          "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000004",
+          "action_kind": "engine.legacy",
+          "subject_human": "ilp:host.example:human:00000000-0000-7000-8000-0000000000aa",
+          "subject_agent": null,
+          "license_plate": null,
+          "mandate": "human_directed",
+          "resource": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "occurred_at": "2026-09-27T12:00:10.000Z",
+          "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "prev_receipt_hash": "537c43f3b9f51e1f219f8def73dbdc449ba9d637e668590a9486eeaec1768362",
+          "hash": "409717ef3ac428f4ff2fe6d159a9c32ce3ae132a30f30f5907ecaca6c5b58dbd"
+        }
+      ],
+      "expect": "reject",
+      "note": "authorization_grant stripped from a hashed receipt"
+    },
+    {
+      "id": "RCPT-BAD-6",
+      "chain": [
+        {
+          "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000001",
+          "action_kind": "engine.event_created",
+          "subject_human": "ilp:host.example:human:00000000-0000-7000-8000-0000000000aa",
+          "subject_agent": null,
+          "license_plate": null,
+          "mandate": "human_directed",
+          "source_class": "engine",
+          "resource": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "occurred_at": "2026-09-27T12:00:00.000Z",
+          "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "prev_receipt_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "c922a9de60425cf2737097232b9ef275a00e58d97ae5389e08051e203a887e63"
+        },
+        {
+          "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000002",
+          "action_kind": "federation.grant_issued",
+          "subject_human": "ilp:home.example:human:0192a1b3-5c6d-7e8f-9a0b-1c2d3e4f5a6b",
+          "subject_agent": "ilp:home.example:agent:0192a1b3-aaaa-7bbb-8ccc-1d2e3f4a5b6c",
+          "license_plate": "IL-7Q3K2M9P",
+          "mandate": "human_directed",
+          "source_class": "engine",
+          "authorization_grant": "ilp:host.example:grant:0192f0c2-7e1a-7b4e-9a55-3c1f0e2d4b61",
+          "resource": "ilp:host.example:grant:0192f0c2-7e1a-7b4e-9a55-3c1f0e2d4b61",
+          "occurred_at": "2026-09-27T12:00:05.000Z",
+          "event": "ilp:host.example:event:00000000-0000-7000-8000-000000000099",
+          "prev_receipt_hash": "c922a9de60425cf2737097232b9ef275a00e58d97ae5389e08051e203a887e63",
+          "hash": "a8997d96a26f2c5fa49d4d0dc32d5c09624f96e5275fce7c8a009e634215cf22"
+        }
+      ],
+      "expect": "reject",
+      "note": "links and hashes recompute, but the chain spans two events"
+    },
+    {
+      "id": "RCPT-BAD-7",
+      "chain": [
+        {
+          "id": "ilp:host.example:receipt:00000000-0000-7000-8000-000000000001",
+          "action_kind": "engine.event_created",
+          "subject_human": "ilp:host.example:human:00000000-0000-7000-8000-0000000000aa",
+          "subject_agent": null,
+          "license_plate": null,
+          "mandate": "human_directed",
+          "source_class": "engine",
+          "resource": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "occurred_at": "2026-09-27T12:00:00.000Z",
+          "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+          "prev_receipt_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "hash": "c922a9de60425cf2737097232b9ef275a00e58d97ae5389e08051e203a887e63",
+          "x_note": "extension members are outside the hash body"
+        }
+      ],
+      "expect": "schema_reject",
+      "note": "an x_ member on a receipt is not covered by the hash, so receipts are closed (R-CORE-39(c) exception)"
+    }
+  ]
+}

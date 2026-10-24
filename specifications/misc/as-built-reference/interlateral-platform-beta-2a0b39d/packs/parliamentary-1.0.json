@@ -1,0 +1,461 @@
+{
+  "id": "parliamentary",
+  "version": "1.0",
+  "params_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "quorum"
+    ],
+    "properties": {
+      "quorum": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 10000
+      },
+      "threshold": {
+        "enum": [
+          "majority",
+          "two_thirds"
+        ],
+        "default": "majority"
+      },
+      "second_required": {
+        "type": "boolean",
+        "default": true
+      }
+    }
+  },
+  "roles": [
+    {
+      "name": "chair",
+      "singleton": true,
+      "description": "recognizes, calls votes, rules on order, adjourns"
+    },
+    {
+      "name": "clerk",
+      "description": "annotates minutes"
+    },
+    {
+      "name": "member",
+      "description": "checks in, moves, seconds, debates, amends, votes, raises points of order"
+    },
+    {
+      "name": "observer",
+      "description": "read-only"
+    }
+  ],
+  "action_types": [
+    {
+      "kind": "parliamentary.checkin",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "roles": [
+        "chair",
+        "clerk",
+        "member"
+      ],
+      "phases": [
+        "assembly"
+      ],
+      "rules": {
+        "once_per_round": true
+      }
+    },
+    {
+      "kind": "parliamentary.motion",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          }
+        }
+      },
+      "roles": [
+        "member"
+      ],
+      "phases": [
+        "session"
+      ],
+      "rules": {
+        "sets_self_state": "moved",
+        "max_open_per_round": 1
+      }
+    },
+    {
+      "kind": "parliamentary.second",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "roles": [
+        "member"
+      ],
+      "phases": [
+        "session"
+      ],
+      "target_kind": "parliamentary.motion",
+      "rules": {
+        "requires_target_state": [
+          "moved"
+        ],
+        "target_author": "other",
+        "one_per_target": true,
+        "sets_target_state": "debating"
+      }
+    },
+    {
+      "kind": "parliamentary.speech",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000
+          }
+        }
+      },
+      "roles": [
+        "member"
+      ],
+      "phases": [
+        "session"
+      ],
+      "target_kind": "parliamentary.motion",
+      "rules": {
+        "requires_target_state": [
+          "debating"
+        ]
+      }
+    },
+    {
+      "kind": "parliamentary.amendment",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000
+          }
+        }
+      },
+      "roles": [
+        "member"
+      ],
+      "phases": [
+        "session"
+      ],
+      "target_kind": "parliamentary.motion",
+      "rules": {
+        "requires_target_state": [
+          "debating"
+        ],
+        "sets_self_state": "moved"
+      }
+    },
+    {
+      "kind": "parliamentary.call_vote",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "roles": [
+        "chair"
+      ],
+      "phases": [
+        "session"
+      ],
+      "target_kind": "parliamentary.motion",
+      "rules": {
+        "requires_target_state": [
+          "debating"
+        ],
+        "sets_target_state": "balloting"
+      }
+    },
+    {
+      "kind": "parliamentary.vote",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "choice"
+        ],
+        "properties": {
+          "choice": {
+            "enum": [
+              "aye",
+              "no",
+              "abstain"
+            ]
+          }
+        }
+      },
+      "roles": [
+        "member"
+      ],
+      "phases": [
+        "session"
+      ],
+      "target_kind": "parliamentary.motion",
+      "rules": {
+        "requires_target_state": [
+          "balloting"
+        ],
+        "allow_multiple_per_target": true
+      }
+    },
+    {
+      "kind": "parliamentary.close_ballot",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "roles": [
+        "chair"
+      ],
+      "phases": [
+        "session"
+      ],
+      "target_kind": "parliamentary.motion",
+      "rules": {
+        "requires_target_state": [
+          "balloting"
+        ]
+      },
+      "triggers_decision": {
+        "decision": "ballot_result",
+        "scope": "target",
+        "outcomes": {
+          "pass": {
+            "set_target_state": "adopted"
+          },
+          "fail": {
+            "set_target_state": "rejected"
+          }
+        }
+      }
+    },
+    {
+      "kind": "parliamentary.point_of_order",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        }
+      },
+      "roles": [
+        "member"
+      ],
+      "phases": [
+        "session"
+      ],
+      "rules": {
+        "sets_self_state": "raised"
+      }
+    },
+    {
+      "kind": "parliamentary.ruling",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "disposition"
+        ],
+        "properties": {
+          "disposition": {
+            "enum": [
+              "well_taken",
+              "not_well_taken"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        }
+      },
+      "roles": [
+        "chair"
+      ],
+      "phases": [
+        "session"
+      ],
+      "target_kind": "parliamentary.point_of_order",
+      "rules": {
+        "requires_target_state": [
+          "raised"
+        ],
+        "one_per_target": true,
+        "sets_target_state": "ruled"
+      }
+    },
+    {
+      "kind": "parliamentary.minutes_note",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000
+          }
+        }
+      },
+      "roles": [
+        "clerk"
+      ],
+      "phases": [
+        "session",
+        "minutes"
+      ]
+    }
+  ],
+  "phase_graph": {
+    "entry": "assembly",
+    "grace_seconds": 30,
+    "phases": [
+      {
+        "id": "assembly",
+        "label": "ASSEMBLY",
+        "transitions": [
+          {
+            "to": "session",
+            "gates": [
+              {
+                "kind": "operator"
+              },
+              {
+                "kind": "count",
+                "predicate": "actions(parliamentary.checkin) >= params.quorum"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "session",
+        "label": "IN SESSION",
+        "transitions": [
+          {
+            "to": "minutes",
+            "gates": [
+              {
+                "kind": "operator"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "minutes",
+        "label": "MINUTES",
+        "transitions": [
+          {
+            "to": "closed",
+            "gates": [
+              {
+                "kind": "operator"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "closed",
+        "label": "ADJOURNED",
+        "transitions": []
+      }
+    ]
+  },
+  "decision_procedures": [
+    {
+      "name": "ballot_result",
+      "procedure": "threshold",
+      "params": {
+        "vote_kind": "parliamentary.vote",
+        "rule": "params.threshold"
+      }
+    }
+  ],
+  "artifact_bindings": [
+    {
+      "on": "phase:session",
+      "role": "minutes",
+      "title_template": "Minutes \u2014 {{event.title}}",
+      "template": "# Minutes \u2014 {{event.title}}\n\n<!-- ilp:block roll -->\n## Roll / quorum\n\n<!-- ilp:block proceedings -->\n## Proceedings\n\n<!-- ilp:block resolutions -->\n## Resolutions\n"
+    },
+    {
+      "on": "decision:ballot_result",
+      "role": "resolution",
+      "title_template": "Resolution",
+      "template": "# Resolution (adopted)\n\n<!-- ilp:block text -->\n{{payload.text}}\n\n<!-- ilp:block tally -->\nAdopted with tally {{result.counts}} ({{result.rule}}).\n"
+    }
+  ],
+  "surface_templates": {
+    "skill_markdown": "## Parliamentary participation\n\nCheck in during ASSEMBLY (quorum = {{params.quorum}}). In SESSION: a member moves a motion; another member seconds it (moving it to debate); members speak and may amend; the chair calls the vote (opening the ballot); members vote aye/no/abstain (you may change your vote until the chair closes the ballot); the chair closes the ballot to record the result ({{params.threshold}}). Points of order may be raised and are ruled by the chair. Adopted motions produce a signed Resolution; the clerk keeps the Minutes.\nAlways send expect_phase. Watch the feed via long-poll.",
+    "ui_labels": {
+      "session": "IN SESSION",
+      "assembly": "ASSEMBLY",
+      "minutes": "MINUTES",
+      "closed": "ADJOURNED"
+    },
+    "primary_cap": null,
+    "action_labels": {
+      "parliamentary.checkin": "Check in",
+      "parliamentary.motion": "Move a motion",
+      "parliamentary.second": "Second",
+      "parliamentary.speech": "Speak",
+      "parliamentary.amendment": "Move an amendment",
+      "parliamentary.call_vote": "Call the vote",
+      "parliamentary.vote": "Vote",
+      "parliamentary.close_ballot": "Close the ballot",
+      "parliamentary.point_of_order": "Point of order",
+      "parliamentary.ruling": "Rule on the point",
+      "parliamentary.minutes_note": "Minutes note"
+    }
+  },
+  "default_role": "member",
+  "terminal_states": [
+    "adopted",
+    "rejected",
+    "dead",
+    "withdrawn"
+  ],
+  "advanced": true
+}

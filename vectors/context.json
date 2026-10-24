@@ -1,0 +1,71 @@
+{
+  "$comment": "Vector context: synthetic values only. The token below is a published test value, never a live credential.",
+  "participant_token": "ilpt_VECTORONLY-0000000000000000000000000000",
+  "credential_binding_rule": "value = base64url(SHA-256(UTF-8 token bytes)), unpadded",
+  "expected_binding": "L9E65WG5386z_mYM_USvQprq1jCPlk2O_obyYhjAUVI",
+  "now_for_validity": 1790500060,
+  "claim_payload": {
+    "iss": "https://home.example",
+    "sub": "ilp:home.example:human:0192a1b3-5c6d-7e8f-9a0b-1c2d3e4f5a6b",
+    "aud": "https://host.example",
+    "iat": 1790500000,
+    "exp": 1790503600,
+    "jti": "claim-0192f0c2-0000-7000-8000-000000000001",
+    "display_name": "Vector Human",
+    "verified": true,
+    "verified_method": "email_otp",
+    "agent": {
+      "id": "ilp:home.example:agent:0192a1b3-aaaa-7bbb-8ccc-1d2e3f4a5b6c",
+      "display_name": "Vector Agent",
+      "license_plate": "IL-7Q3K2M9P"
+    },
+    "purpose": "event_join",
+    "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+    "consent_accepted": null
+  },
+  "grant_payload": {
+    "iss": "https://host.example",
+    "aud": "https://host.example",
+    "jti": "ilp:host.example:grant:0192f0c2-7e1a-7b4e-9a55-3c1f0e2d4b61",
+    "sub": "ilp:home.example:human:0192a1b3-5c6d-7e8f-9a0b-1c2d3e4f5a6b",
+    "agent": {
+      "id": "ilp:home.example:agent:0192a1b3-aaaa-7bbb-8ccc-1d2e3f4a5b6c",
+      "license_plate": "IL-7Q3K2M9P"
+    },
+    "event": "ilp:host.example:event:0192e7d1-1111-7222-8333-944455566677",
+    "home": "home.example",
+    "role": "participant",
+    "authorization_details": [
+      {
+        "type": "ilp.pack_action",
+        "pack": "unconference@1.1",
+        "actions": [
+          "unconference.proposal"
+        ]
+      }
+    ],
+    "exclusions": [
+      "unconference.vote"
+    ],
+    "mandates_allowed": [
+      "human_directed",
+      "human_approved"
+    ],
+    "iat": 1790500000,
+    "nbf": 1790500000,
+    "exp": 1790500600,
+    "credential_binding": {
+      "alg": "S256",
+      "value": "L9E65WG5386z_mYM_USvQprq1jCPlk2O_obyYhjAUVI"
+    },
+    "status": {
+      "uri": "https://host.example/ilp/v1/grants/0192f0c2-7e1a-7b4e-9a55-3c1f0e2d4b61/status"
+    },
+    "parent_grant": null
+  },
+  "seeds": {
+    "vec-home-1": "0x01 × 32",
+    "vec-host-1": "0x02 × 32",
+    "vec-other-1": "0x03 × 32"
+  }
+}

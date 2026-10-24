@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ilp:schema:discovery:v1",
+  "title": "ILP instance discovery document (/.well-known/interlateral.json)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "protocols", "instance", "keys", "endpoints", "packs", "federation"],
+  "properties": {
+    "protocol": { "const": "ilp/1", "$comment": "highest supported version, for quick checks" },
+    "protocols": {
+      "type": "array", "minItems": 1,
+      "items": { "type": "string", "pattern": "^ilp/[0-9]+$" },
+      "$comment": "all supported protocol versions (R-FED-15 version negotiation)"
+    },
+    "instance": {
+      "type": "object", "additionalProperties": false,
+      "required": ["host", "name"],
+      "properties": {
+        "host": { "type": "string", "pattern": "^[a-z0-9.-]+$" },
+        "name": { "type": "string" },
+        "operator_contact": { "type": "string", "$comment": "mailto: or https: URI" },
+        "software": {
+          "type": "object", "additionalProperties": false,
+          "properties": { "name": { "type": "string" }, "version": { "type": "string" } }
+        },
+        "federation_policy_url": { "type": "string", "format": "uri", "$comment": "human-readable peering/trust policy (R-FED-16)" }
+      }
+    },
+    "keys": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["kid", "kty", "crv", "x", "use"],
+        "properties": {
+          "kid": { "type": "string" },
+          "kty": { "const": "OKP" },
+          "crv": { "const": "Ed25519" },
+          "x": { "type": "string", "$comment": "base64url public key" },
+          "use": { "const": "sig" },
+          "not_after": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "endpoints": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api", "federation", "directory", "revocations"],
+      "properties": {
+        "api": { "type": "string", "format": "uri" },
+        "federation": { "type": "string", "format": "uri" },
+        "directory": { "type": "string", "format": "uri" },
+        "revocations": { "type": "string", "format": "uri" }
+      }
+    },
+    "packs": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "version"],
+        "properties": {
+          "id": { "type": "string" },
+          "version": { "type": "string" },
+          "compatible_versions": { "type": "array", "items": { "type": "string" }, "$comment": "same-major versions this instance can interoperate with" }
+        }
+      }
+    },
+    "federation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["mode", "join_requests"],
+      "properties": {
+        "mode": { "enum": ["allowlist"], "$comment": "open federation is FUTURE" },
+        "join_requests": { "type": "boolean" }
+      }
+    }
+  }
+}

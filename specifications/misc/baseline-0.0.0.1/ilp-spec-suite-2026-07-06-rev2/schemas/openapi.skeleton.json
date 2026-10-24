@@ -1,0 +1,128 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Interlateral Protocol (ILP) v1",
+    "version": "1.0.0-draft",
+    "description": "SKELETON — the builder must complete this to cover EVERY ILP endpoint (R-CORE-3). Representative paths below establish the conventions: problem-document errors, cursor pagination, long-poll feeds, schema $refs into schemas/*.schema.json. The served /ilp/v1/openapi.json must be the completed equivalent of this file."
+  },
+  "servers": [{ "url": "https://{host}/ilp/v1", "variables": { "host": { "default": "events.example" } } }],
+  "components": {
+    "securitySchemes": {
+      "humanSession": { "type": "apiKey", "in": "cookie", "name": "il_session" },
+      "participantToken": { "type": "http", "scheme": "bearer", "bearerFormat": "ilpt_*" },
+      "peerSignature": { "type": "http", "scheme": "signature", "description": "RFC 9421 HTTP message signature, Ed25519, keyid=<host>#<kid>" }
+    },
+    "schemas": {
+      "Problem": { "$ref": "./problem.schema.json" },
+      "EventHome": { "$ref": "./event-home.schema.json" },
+      "ActionSubmission": { "$ref": "./action.schema.json#/$defs/submission" },
+      "ActionRecord": { "$ref": "./action.schema.json#/$defs/record" },
+      "Receipt": { "$ref": "./receipt.schema.json" },
+      "FeedRecord": { "$ref": "./feed-record.schema.json" },
+      "ArtifactMeta": { "$ref": "./artifact-change.schema.json#/$defs/artifactMeta" },
+      "ArtifactChange": { "$ref": "./artifact-change.schema.json#/$defs/changeRecord" },
+      "Discovery": { "$ref": "./discovery.schema.json" },
+      "IdentityClaim": { "$ref": "./identity-claim.schema.json" },
+      "ExportManifest": { "$ref": "./export-manifest.schema.json" },
+      "EventDefinition": { "$ref": "./event-definition.schema.json" }
+    },
+    "responses": {
+      "Problem": {
+        "description": "Error (RFC 9457)",
+        "content": { "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } } }
+      }
+    },
+    "parameters": {
+      "cursor": { "name": "cursor", "in": "query", "schema": { "type": "string" } },
+      "limit": { "name": "limit", "in": "query", "schema": { "type": "integer", "maximum": 200 } },
+      "since": { "name": "since", "in": "query", "schema": { "type": "integer" } },
+      "wait": { "name": "wait", "in": "query", "schema": { "type": "integer", "maximum": 60 } }
+    }
+  },
+  "paths": {
+    "/events/{eventId}": {
+      "get": {
+        "operationId": "getEventHome",
+        "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Event Home", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EventHome" } } } },
+          "default": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/events/{eventId}/feed": {
+      "get": {
+        "operationId": "getEventFeed",
+        "parameters": [
+          { "name": "eventId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "$ref": "#/components/parameters/since" },
+          { "$ref": "#/components/parameters/wait" },
+          { "$ref": "#/components/parameters/limit" }
+        ],
+        "responses": {
+          "200": { "description": "records newer than since", "content": { "application/json": { "schema": { "type": "object", "required": ["items"], "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/FeedRecord" } } } } } } },
+          "204": { "description": "long-poll timeout, nothing newer" },
+          "default": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/events/{eventId}/actions": {
+      "post": {
+        "operationId": "submitAction",
+        "security": [{ "participantToken": [] }],
+        "parameters": [
+          { "name": "eventId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "Idempotency-Key", "in": "header", "schema": { "type": "string" } }
+        ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ActionSubmission" } } } },
+        "responses": {
+          "201": { "description": "accepted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ActionRecord" } } } },
+          "default": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/artifacts/{artifactId}/edits": {
+      "post": {
+        "operationId": "casEdit",
+        "security": [{ "participantToken": [] }, { "humanSession": [] }],
+        "parameters": [{ "name": "artifactId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object", "required": ["base_rev", "ops"],
+            "properties": {
+              "base_rev": { "type": "integer" },
+              "ops": { "type": "array", "minItems": 1 },
+              "expect_phase": { "type": ["string", "null"] },
+              "mandate": { "type": "string" },
+              "note": { "type": "string" }
+            } } } }
+        },
+        "responses": {
+          "201": { "description": "new revision", "content": { "application/json": { "schema": { "type": "object", "required": ["rev", "body_sha256"], "properties": { "rev": { "type": "integer" }, "body_sha256": { "type": "string" } } } } } },
+          "409": { "description": "STALE_BASE / AMBIGUOUS_ANCHOR / ARTIFACT_FROZEN", "content": { "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+          "default": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/federation/events": {
+      "get": {
+        "operationId": "getFederatedDirectory",
+        "responses": {
+          "200": { "description": "this instance's federated events", "content": { "application/json": { "schema": { "type": "object", "properties": { "items": { "type": "array" } } } } } }
+        }
+      }
+    },
+    "/events/{eventId}/join-requests": {
+      "post": {
+        "operationId": "createJoinRequest",
+        "parameters": [{ "name": "eventId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["claim"], "properties": { "claim": { "type": "string", "description": "EdDSA JWT whose payload validates against IdentityClaim" } } } } } },
+        "responses": {
+          "202": { "description": "pending", "content": { "application/json": { "schema": { "type": "object", "required": ["join_request_id", "status", "retrieval_key"], "properties": { "join_request_id": { "type": "string" }, "status": { "type": "string" }, "retrieval_key": { "type": "string" } } } } } },
+          "default": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    }
+  }
+}

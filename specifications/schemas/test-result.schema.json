@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ilp:schema:test-result:v1",
+  "title": "Project Connect test result",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x_": {}
+  },
+  "required": [
+    "test_id",
+    "scenario",
+    "repetition",
+    "status",
+    "traces",
+    "started_at",
+    "elapsed_ms",
+    "observations"
+  ],
+  "properties": {
+    "test_id": {
+      "type": "string",
+      "pattern": "^PC-[A-Z]+-[A-Z0-9]+$"
+    },
+    "scenario": {
+      "type": "string",
+      "pattern": "^SC-[0-9]+$"
+    },
+    "repetition": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "status": {
+      "enum": [
+        "pass",
+        "fail",
+        "not_applicable"
+      ]
+    },
+    "traces": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^R-[A-Z]+-[0-9]+[a-z]?$"
+      }
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "elapsed_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "observations": {
+      "type": "object"
+    },
+    "failure": {
+      "type": "string"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

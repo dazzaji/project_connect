@@ -1,0 +1,522 @@
+{
+  "id": "meeting-simple",
+  "version": "1.0",
+  "advanced": false,
+  "default_role": "member",
+  "roles": [
+    {
+      "name": "chair",
+      "singleton": true,
+      "description": "opens items, calls and closes ballots — keeps ONE question before the group"
+    },
+    {
+      "name": "clerk",
+      "description": "adds visually-distinct notes to the meeting record"
+    },
+    {
+      "name": "member",
+      "description": "checks in, proposes agenda items, discusses, amends, votes, tables"
+    }
+  ],
+  "terminal_states": [
+    "adopted",
+    "rejected",
+    "tabled",
+    "withdrawn"
+  ],
+  "on_close_state": "tabled",
+  "params_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "quorum"
+    ],
+    "properties": {
+      "quorum": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 10000
+      },
+      "amendments": {
+        "type": "boolean",
+        "default": true,
+        "$comment": "KP-1: amendments default ON; false = the pure simple process preset"
+      }
+    }
+  },
+  "phase_graph": {
+    "entry": "checkin",
+    "grace_seconds": 30,
+    "phases": [
+      {
+        "id": "checkin",
+        "label": "CHECK-IN",
+        "transitions": [
+          {
+            "to": "agenda",
+            "gates": [
+              {
+                "kind": "operator"
+              },
+              {
+                "kind": "count",
+                "predicate": "actions(meeting.checkin) >= params.quorum"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "agenda",
+        "label": "AGENDA",
+        "transitions": [
+          {
+            "to": "meeting",
+            "gates": [
+              {
+                "kind": "operator"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "meeting",
+        "label": "IN MEETING",
+        "transitions": [
+          {
+            "to": "wrapup",
+            "gates": [
+              {
+                "kind": "operator"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "wrapup",
+        "label": "WRAP-UP",
+        "transitions": [
+          {
+            "to": "closed",
+            "gates": [
+              {
+                "kind": "operator"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "closed",
+        "label": "COMPLETED",
+        "transitions": []
+      }
+    ]
+  },
+  "action_types": [
+    {
+      "kind": "meeting.checkin",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "roles": [
+        "chair",
+        "clerk",
+        "member"
+      ],
+      "phases": [
+        "checkin"
+      ],
+      "rules": {
+        "once_per_round": true
+      }
+    },
+    {
+      "kind": "meeting.propose_item",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 10000
+          }
+        }
+      },
+      "roles": [
+        "chair",
+        "member"
+      ],
+      "phases": [
+        "agenda"
+      ],
+      "rules": {
+        "sets_self_state": "proposed"
+      }
+    },
+    {
+      "kind": "meeting.open_item",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "roles": [
+        "chair"
+      ],
+      "phases": [
+        "meeting"
+      ],
+      "target_kind": "meeting.propose_item",
+      "rules": {
+        "requires_target_state": [
+          "proposed",
+          "tabled"
+        ],
+        "sets_target_state": "discussing",
+        "unique_target_state": true
+      }
+    },
+    {
+      "kind": "meeting.remark",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          }
+        }
+      },
+      "roles": [
+        "chair",
+        "clerk",
+        "member"
+      ],
+      "phases": [
+        "meeting"
+      ],
+      "target_kind": [
+        "meeting.propose_item",
+        "meeting.amend"
+      ],
+      "rules": {
+        "requires_target_state": [
+          "discussing",
+          "amending"
+        ],
+        "allow_multiple_per_target": true,
+        "no_open_children": true
+      }
+    },
+    {
+      "kind": "meeting.amend",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          }
+        }
+      },
+      "roles": [
+        "chair",
+        "member"
+      ],
+      "phases": [
+        "meeting"
+      ],
+      "target_kind": "meeting.propose_item",
+      "rules": {
+        "requires_target_state": [
+          "discussing"
+        ],
+        "sets_self_state": "amending",
+        "requires_param": "amendments",
+        "unique_target_state": false,
+        "max_open_per_round": 1
+      }
+    },
+    {
+      "kind": "meeting.open_ballot",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "roles": [
+        "chair"
+      ],
+      "phases": [
+        "meeting"
+      ],
+      "target_kind": [
+        "meeting.propose_item",
+        "meeting.amend"
+      ],
+      "rules": {
+        "requires_target_state": [
+          "discussing",
+          "amending"
+        ],
+        "sets_target_state": "voting",
+        "unique_target_state": true,
+        "no_open_children": true
+      }
+    },
+    {
+      "kind": "meeting.vote",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "choice"
+        ],
+        "properties": {
+          "choice": {
+            "enum": [
+              "aye",
+              "no",
+              "abstain"
+            ]
+          }
+        }
+      },
+      "roles": [
+        "chair",
+        "clerk",
+        "member"
+      ],
+      "phases": [
+        "meeting"
+      ],
+      "target_kind": [
+        "meeting.propose_item",
+        "meeting.amend"
+      ],
+      "rules": {
+        "requires_target_state": [
+          "voting"
+        ],
+        "allow_multiple_per_target": true
+      }
+    },
+    {
+      "kind": "meeting.close_ballot",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "roles": [
+        "chair"
+      ],
+      "phases": [
+        "meeting"
+      ],
+      "target_kind": [
+        "meeting.propose_item",
+        "meeting.amend"
+      ],
+      "rules": {
+        "requires_target_state": [
+          "voting"
+        ]
+      },
+      "triggers_decision": {
+        "decision": "ballot_result",
+        "scope": "target",
+        "outcomes": {
+          "pass": {
+            "set_target_state": "adopted"
+          },
+          "fail": {
+            "set_target_state": "rejected"
+          }
+        }
+      }
+    },
+    {
+      "kind": "meeting.table",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "roles": [
+        "member",
+        "chair"
+      ],
+      "phases": [
+        "meeting"
+      ],
+      "target_kind": "meeting.propose_item",
+      "rules": {
+        "requires_target_state": [
+          "discussing"
+        ],
+        "sets_target_state": "table_pending",
+        "one_per_target": false,
+        "no_open_children": true
+      }
+    },
+    {
+      "kind": "meeting.second_table",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "roles": [
+        "member",
+        "chair"
+      ],
+      "phases": [
+        "meeting"
+      ],
+      "target_kind": "meeting.propose_item",
+      "rules": {
+        "requires_target_state": [
+          "table_pending"
+        ],
+        "sets_target_state": "tabled",
+        "state_setter_author": "other"
+      }
+    },
+    {
+      "kind": "meeting.withdraw",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "roles": [
+        "member",
+        "chair"
+      ],
+      "phases": [
+        "meeting"
+      ],
+      "target_kind": [
+        "meeting.propose_item",
+        "meeting.amend"
+      ],
+      "rules": {
+        "requires_target_state": [
+          "proposed",
+          "discussing",
+          "table_pending",
+          "amending"
+        ],
+        "sets_target_state": "withdrawn",
+        "target_author": "self",
+        "no_open_children": true
+      }
+    },
+    {
+      "kind": "meeting.note",
+      "payload_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          }
+        }
+      },
+      "roles": [
+        "clerk"
+      ],
+      "phases": [
+        "meeting",
+        "wrapup"
+      ],
+      "rules": {}
+    }
+  ],
+  "decision_procedures": [
+    {
+      "name": "ballot_result",
+      "procedure": "threshold",
+      "params": {
+        "vote_kind": "meeting.vote",
+        "rule": "majority"
+      }
+    }
+  ],
+  "artifact_bindings": [
+    {
+      "on": "phase:closed",
+      "role": "record",
+      "generate": "round_record",
+      "title_template": "Meeting record — {{event.title}}"
+    }
+  ],
+  "surface_templates": {
+    "ui_labels": {
+      "checkin": "CHECK-IN",
+      "agenda": "AGENDA",
+      "meeting": "IN MEETING",
+      "wrapup": "WRAP-UP",
+      "closed": "COMPLETED"
+    },
+    "status_labels": {
+      "draft": "Setup",
+      "open": "Registration",
+      "live": "In meeting",
+      "closed": "Completed",
+      "archived": "Archived"
+    },
+    "action_labels": {
+      "meeting.checkin": "Check in",
+      "meeting.propose_item": "Propose agenda item",
+      "meeting.open_item": "Open this item (make it the current question)",
+      "meeting.remark": "Add to the discussion",
+      "meeting.amend": "Propose an amendment",
+      "meeting.open_ballot": "Call vote",
+      "meeting.vote": "Vote",
+      "meeting.close_ballot": "Close the ballot",
+      "meeting.table": "Move to set aside (table)",
+      "meeting.second_table": "Second setting this aside",
+      "meeting.withdraw": "Withdraw",
+      "meeting.note": "Clerk note"
+    },
+    "note_kinds": [
+      "meeting.note"
+    ]
+  },
+  "current_states": [
+    "discussing",
+    "amending",
+    "voting",
+    "table_pending"
+  ]
+}

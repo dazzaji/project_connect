@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ilp:schema:receipt:v2",
+  "title": "ILP receipt (R-CORE-22..25, R-CORE-40)",
+  "$comment": "Wire members equal the hash-body members plus `hash` (R-CORE-40.1), so the set is CLOSED, including to `x_` members, which the hash would not cover; `resource_global_id` is not a member (K-21).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "event",
+    "action_kind",
+    "subject_human",
+    "subject_agent",
+    "license_plate",
+    "mandate",
+    "resource",
+    "occurred_at",
+    "prev_receipt_hash",
+    "hash"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^ilp:[a-z0-9.-]+:receipt:[A-Za-z0-9-]+$"
+    },
+    "event": {
+      "type": "string",
+      "pattern": "^ilp:[a-z0-9.-]+:event:[A-Za-z0-9-]+$"
+    },
+    "action_kind": {
+      "type": "string",
+      "minLength": 1
+    },
+    "subject_human": {
+      "type": "string",
+      "pattern": "^ilp:[a-z0-9.-]+:human:[A-Za-z0-9-]+$"
+    },
+    "subject_agent": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^ilp:[a-z0-9.-]+:agent:[A-Za-z0-9-]+$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "license_plate": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^IL-[A-Z2-9]{8}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "mandate": {
+      "enum": [
+        "human_directed",
+        "human_approved",
+        "standing_instruction",
+        "agent_draft_unaccepted"
+      ]
+    },
+    "source_class": {
+      "enum": [
+        "browser_ui",
+        "agent_token_api",
+        "engine"
+      ]
+    },
+    "authorization_grant": {
+      "type": "string",
+      "pattern": "^ilp:[a-z0-9.-]+:grant:[A-Za-z0-9-]+$"
+    },
+    "resource": {
+      "type": "string",
+      "pattern": "^ilp:[a-z0-9.-]+:[a-z_]+:[A-Za-z0-9-]+$"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "prev_receipt_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

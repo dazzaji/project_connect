@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ilp:schema:artifact-change:v1",
+  "title": "ILP Collaboration artifact meta and change/revision record",
+  "$defs": {
+    "globalId": { "type": "string", "pattern": "^ilp:[a-z0-9.-]+:[a-z_]+:[A-Za-z0-9-]+$" },
+    "author": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["human"],
+      "properties": {
+        "human": { "$ref": "#/$defs/globalId" },
+        "agent": { "oneOf": [ { "$ref": "#/$defs/globalId" }, { "type": "null" } ] },
+        "license_plate": { "type": ["string", "null"] },
+        "display_name": { "type": "string" },
+        "origin_host": { "type": ["string", "null"] }
+      }
+    },
+    "artifactMeta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "event", "title", "role", "rev", "body_sha256", "frozen", "limits"],
+      "properties": {
+        "id": { "$ref": "#/$defs/globalId" },
+        "event": { "$ref": "#/$defs/globalId" },
+        "title": { "type": "string" },
+        "role": { "type": "string" },
+        "rev": { "type": "integer", "minimum": 0 },
+        "body_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "frozen": { "type": "boolean" },
+        "publication": { "enum": ["internal", "published"] },
+        "created_from": { "oneOf": [ { "$ref": "#/$defs/globalId" }, { "type": "null" } ] },
+        "blocks": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["id"],
+            "properties": { "id": { "type": "string" }, "heading": { "type": "string" }, "start_line": { "type": "integer" } }
+          }
+        },
+        "limits": {
+          "type": "object", "additionalProperties": false,
+          "required": ["max_op_bytes", "max_body_bytes"],
+          "properties": {
+            "max_op_bytes": { "type": "integer" },
+            "max_body_bytes": { "type": "integer" }
+          },
+          "$comment": "R-COLLAB-7: limits are surfaced, not discovered by 413"
+        },
+        "threads_count": { "type": "integer" }
+      }
+    },
+    "changeRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rev", "author", "op", "diff", "body_sha256", "occurred_at"],
+      "properties": {
+        "rev": { "type": "integer", "minimum": 1 },
+        "author": { "$ref": "#/$defs/author" },
+        "op": { "enum": ["init", "edit", "append", "amendment"] },
+        "target_block": { "type": ["string", "null"] },
+        "diff": { "type": "string", "$comment": "unified diff from rev-1 to rev" },
+        "body_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "dedupe_key": { "type": ["string", "null"] },
+        "note": { "type": ["string", "null"] },
+        "occurred_at": { "type": "string", "format": "date-time" },
+        "receipt": { "oneOf": [ { "$ref": "#/$defs/globalId" }, { "type": "null" } ] }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "artifact", "rev", "body_sha256", "contributor_map", "taken_at", "signature"],
+      "properties": {
+        "id": { "$ref": "#/$defs/globalId" },
+        "artifact": { "$ref": "#/$defs/globalId" },
+        "rev": { "type": "integer" },
+        "label": { "type": "string" },
+        "body_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "contributor_map": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["author", "revisions"],
+            "properties": { "author": { "$ref": "#/$defs/author" }, "revisions": { "type": "array", "items": { "type": "integer" } } }
+          }
+        },
+        "taken_by": { "$ref": "#/$defs/globalId" },
+        "taken_at": { "type": "string", "format": "date-time" },
+        "signature": { "type": "string", "$comment": "Ed25519 over JCS-canonical snapshot sans signature, base64url" },
+        "kid": { "type": "string" }
+      }
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/artifactMeta" },
+    { "$ref": "#/$defs/changeRecord" },
+    { "$ref": "#/$defs/snapshot" }
+  ]
+}

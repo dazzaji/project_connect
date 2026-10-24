@@ -1,0 +1,29 @@
+{
+  "state_dir": "/srv/connect/state",
+  "secrets_dir": "/srv/connect/secrets",
+  "listen": {
+    "host": "127.0.0.1",
+    "port": 4300
+  },
+  "limits": {
+    "max_concurrent_jobs": 1,
+    "max_reps": 2,
+    "max_pairs": 4,
+    "job_timeout_s": 1800,
+    "max_queued": 10,
+    "cancel_grace_ms": 5000,
+    "max_request_bytes": 16384
+  },
+  "profiles": {
+    "pc-0.1-s1": "/srv/connect/project_connect/profile/pc-0.1-s1.json"
+  },
+  "runner": {
+    "node": "/usr/local/bin/node",
+    "entry": "/srv/connect/project_connect/runner/service-run.mjs",
+    "env": {}
+  },
+  "port_pool": {
+    "from": 47100,
+    "to": 47199
+  }
+}
