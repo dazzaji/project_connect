@@ -2,17 +2,13 @@
 
 ## 1. Two-Way Conformance and Interoperability Test
 
-**Status: In progress as of 2026-09-27 (Pacific Time).**
+**Status: Preparatory implementations and test tooling delivered as drafts; formal acceptance remains open as of 2026-10-23.**
 
-The current PC-S1 v3.1 sprint advances this item through a local exploratory
-conformance and interoperability test of two Beta deployments, plus Beta and a
-spec-derived reference node, with an offline-verifiable evidence packet. It is
-not yet a completed conformance result, certification, or Alpha/Beta
-interoperability proof.
-
-See the [sprint specification (v3.1 sharing snapshot)](https://github.com/PrototypeJam/interlateral_platform_beta/blob/codex/sprint-plan-sharing/docs/interoperability/sprint.md).
-The link requires access to the private Beta repository; the sharing snapshot
-is not the live execution authority or a live status report.
+The current work has produced draft protocol, platform and federation-service
+implementations, together with conformance, interoperability and evidence tooling.
+Local rehearsals support that build-out, but the remaining formal acceptance and
+cross-platform interoperability checks are unfinished. This is not a completed
+two-way conformance result or certification.
 
 Conduct a two-way test that:
 
