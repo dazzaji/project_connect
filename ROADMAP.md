@@ -1,8 +1,44 @@
 # Roadmap
 
+The specification is a working draft (`0.0.2`) and the conformance profiles are
+candidates. Every result this repository produces is a **candidate result only.
+Nothing here is certified.** A job status of `succeeded`, a verifier `PASS`, and
+a discovery field value are not certification.
+
+## Usable now
+
+Each of these has a tested walkthrough in the [README Quickstart](README.md#quickstart).
+
+1. **Reference node and discovery.** Start `reference-node/main.mjs` on
+   loopback and read `/.well-known/interlateral.json`.
+2. **Standalone conformance job service and runner.** Register nodes you
+   control, submit a job, and get a report with per-test rows, counts, and a
+   `qualification` (`partial` unless every profile test was selected). Loopback
+   only, one job at a time, targets on the same machine.
+3. **Evidence packet export and offline verification.** Copy a job's
+   `pc-evidence/1` packet out, verify it with `verifier/cli.mjs` against pinned
+   trust roots, and see a copy with one flipped bit rejected.
+
+## Not yet usable
+
+- **Formal acceptance gates:** frozen-profile conformance and the formal
+  acceptance of the two-way test in section 1 below.
+- **Certification:** certification awards, a certification mark, a directory
+  of certified systems, and federation admission. The certification record in
+  [docs/core-service-profile.md](docs/core-service-profile.md) is a proposal.
+- **Multi-party interoperability:** interoperability results between
+  independently operated implementations, including the two-way test below and
+  the three-way test under Possible Future Work.
+- **Whole-profile results on reference nodes:** the outage and key drill tests
+  run only through a harness control API, so a job on two reference nodes stays
+  `partial`.
+- **A hosted or continuous conformance service,** targets on other machines, and
+  the job service on Linux (untested) or Windows (unsupported).
+- **Everything under Possible Future Work and Prospective Additional Work.**
+
 ## 1. Two-Way Conformance and Interoperability Test
 
-**Status: Preparatory implementations and test tooling delivered as drafts; formal acceptance remains open as of 2026-10-23.**
+**Status: not yet usable. Preparatory implementations and test tooling delivered as drafts; formal acceptance remains open as of 2026-10-23.**
 
 The current work has produced draft protocol, platform and federation-service
 implementations, together with conformance, interoperability and evidence tooling.
@@ -17,11 +53,13 @@ Conduct a two-way test that:
 
 # Possible Future Work
 
+Not yet usable.
+
 - Three-way interoperability testing in which one participating implementation is a continuous test service offered by the federation.
 
 # Prospective Additional Work
 
-These are proposals for implementation quality and later qualification, not new
+Not yet usable. These are proposals for implementation quality and later qualification, not new
 acceptance requirements or blockers for the current exploratory `pc-0.1-s1`
 sprint. Existing in-scope protocol requirements remain mandatory. Any broader
 protocol or conformance-profile requirements need a separately reviewed scope
