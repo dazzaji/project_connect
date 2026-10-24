@@ -2,6 +2,14 @@
 
 Status: discussion draft
 
+Implementation note: the verifier in this repository (`verifier/cli.mjs`)
+checks the implemented format `pc-evidence/1`, not the draft layout below. In
+that format the root manifest is `content.json` (every file and its SHA-256),
+bound by `envelope.json` and signed by `attestations/*.jws`; there is no
+`manifest.json` or `manifest.sig` at the packet root. The other implemented
+members are `profile/<id>.json`, `results/results.jsonl`, `subjects/`,
+`exports/`, and, for `pc-core-service-0.1`, `manifest/job-manifest.json`.
+
 The evidence packet is a portable, sanitized, independently verifiable record
 of one Project Connect test run. It supports, but does not by itself guarantee,
 the conformance and interoperability findings defined in the corresponding
