@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// usage: node reference-node/main.mjs --base-url http://pc-ref.localhost:4190 --port 4190 --key-file <path> --admin-token-file <path> [--dev] [--bound 60]
+// usage: node reference-node/main.mjs --base-url http://ref-a.localhost:4740 --port 4740 --host 127.0.0.1 --key-file <path> --admin-token-file <path> [--dev] [--bound 60]
 // Keys fail closed (R-CORE-34(b)): a missing or invalid key file stops startup unless --dev, which may create one but never overwrite.
 import { execFileSync } from "node:child_process";
 import { createPrivateKey, createPublicKey } from "node:crypto";

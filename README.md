@@ -27,6 +27,9 @@ has a tested walkthrough in the [Quickstart](#quickstart).
    copy rejected.** `node verifier/cli.mjs .run/packet --trust .run/trust.json --out .run/report`
    prints `PASS`; the same command on a copy with one flipped bit prints `FAIL`.
 
+The Quickstart uses ports 4740–4744 by default; [step 0](#0-choose-the-ports-once-per-shell)
+shows how to change them in one place.
+
 Everything else (formal acceptance gates, certification, multi-party
 interoperability between independently operated implementations, a hosted
 service) is **not yet usable**. See [ROADMAP.md](ROADMAP.md).
@@ -149,8 +152,23 @@ npm ci
 npm test
 ```
 
+`npm test` takes about half a minute. It is a self-check and is not needed for
+steps 1–3.
+
 Runtime files go in `.run/`, which is gitignored. They include admin tokens and
 private keys. Do not commit them.
+
+### 0. Choose the ports (once per shell)
+
+The steps below use five loopback ports. Run this line in **every** shell you
+open for the Quickstart. If a port is taken, change it here and nowhere else:
+
+```sh
+export REF_A=4740 REF_B=4741 SVC=4742 POOL_FROM=4743 POOL_TO=4744
+```
+
+You can use separate shells for the nodes and the service, as below, or start
+them in the background in one shell (`… &`) and stop them with `kill %1 %2 %3`.
 
 ### 1. Start a reference node and read its discovery document
 
@@ -159,7 +177,7 @@ umask 077
 mkdir -p .run/ref-a .run/ref-b
 openssl rand -hex 32 > .run/ref-a/admin.token
 openssl rand -hex 32 > .run/ref-b/admin.token
-node reference-node/main.mjs --base-url http://ref-a.localhost:4740 --port 4740 --host 127.0.0.1 --key-file .run/ref-a/key.json --admin-token-file .run/ref-a/admin.token --dev
+node reference-node/main.mjs --base-url http://ref-a.localhost:$REF_A --port $REF_A --host 127.0.0.1 --key-file .run/ref-a/key.json --admin-token-file .run/ref-a/admin.token --dev
 ```
 
 `--dev` creates the key file once (mode `0600`) and never overwrites it. Pass
@@ -167,7 +185,7 @@ node reference-node/main.mjs --base-url http://ref-a.localhost:4740 --port 4740 
 interface. `*.localhost` names resolve to loopback. In a second shell:
 
 ```sh
-curl -fsS http://ref-a.localhost:4740/.well-known/interlateral.json
+curl -fsS http://ref-a.localhost:$REF_A/.well-known/interlateral.json
 ```
 
 Expect `"protocol":"ilp/1"`, `instance.software.name`
@@ -178,7 +196,7 @@ key. `/healthz` returns `{"ok":true}`. The `conformance.mode` value
 Step 2 needs a pair, so start a second node in a third shell:
 
 ```sh
-node reference-node/main.mjs --base-url http://ref-b.localhost:4741 --port 4741 --host 127.0.0.1 --key-file .run/ref-b/key.json --admin-token-file .run/ref-b/admin.token --dev
+node reference-node/main.mjs --base-url http://ref-b.localhost:$REF_B --port $REF_B --host 127.0.0.1 --key-file .run/ref-b/key.json --admin-token-file .run/ref-b/admin.token --dev
 ```
 
 ### 2. Run the conformance service against nodes you control
@@ -196,11 +214,12 @@ node --input-type=module <<'EOF'
 import { readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { thumbprint } from "./verifier/verify.mjs";
+const env = (v) => { const n = Number(process.env[v]); if (!n) throw new Error(`export ${v} first (step 0)`); return n; };
 const S = `${process.cwd()}/.run/svc`, put = (f, v) => writeFileSync(`${S}/${f}`, JSON.stringify(v, null, 2) + "\n");
-const nodes = { "ref-a": 4740, "ref-b": 4741 };
-put("config/service.json", { state_dir: `${S}/state`, secrets_dir: `${S}/secrets`, listen: { host: "127.0.0.1", port: 4742 },
+const nodes = { "ref-a": env("REF_A"), "ref-b": env("REF_B") };
+put("config/service.json", { state_dir: `${S}/state`, secrets_dir: `${S}/secrets`, listen: { host: "127.0.0.1", port: env("SVC") },
   profiles: { "pc-core-service-0.1": `${process.cwd()}/profile/pc-core-service-0.1.json` },
-  runner: { node: process.execPath, entry: `${process.cwd()}/runner/service-run.mjs`, env: {} }, port_pool: { from: 4743, to: 4744 } });
+  runner: { node: process.execPath, entry: `${process.cwd()}/runner/service-run.mjs`, env: {} }, port_pool: { from: env("POOL_FROM"), to: env("POOL_TO") } });
 put("config/tokens.json", [{ id: "me", role: "submitter",
   token_sha256: createHash("sha256").update(readFileSync(`${S}/api.token`, "utf8").trim()).digest("hex") }]);
 put("config/targets.json", Object.entries(nodes).map(([id, port]) => {
@@ -222,29 +241,38 @@ node service/cli.mjs serve --config .run/svc/config
 
 ```sh
 export CONNECT_TOKEN="$(cat .run/svc/api.token)"
-node service/cli.mjs submit --url http://127.0.0.1:4742 --file .run/svc/request.json
-node service/cli.mjs status --url http://127.0.0.1:4742 --job JOB_ID
-node service/cli.mjs results --url http://127.0.0.1:4742 --job JOB_ID > .run/job-report.json
+node service/cli.mjs submit --url http://127.0.0.1:$SVC --file .run/svc/request.json | tee .run/job.json
+export JOB="$(node -p 'require("./.run/job.json").id')"
 ```
 
-`submit` prints the job `id`; use it as `JOB_ID`. The job takes a few seconds.
-`results` answers `409` until the job is terminal. The report has one row per
+`submit` prints the job, and the second line keeps its `id` in `JOB`. The job
+takes a few seconds. Check it, and fetch the report once it is done:
+
+```sh
+node service/cli.mjs status --url http://127.0.0.1:$SVC --job $JOB
+node service/cli.mjs results --url http://127.0.0.1:$SVC --job $JOB > .run/job-report.json
+```
+
+`results` answers `409` until the job is terminal. Terminal statuses are
+`succeeded`, `failed`, `cancelled`, `interrupted` and `timed_out`
+([service/README.md](service/README.md)); poll `status` until you see one of
+them. The report has one row per
 test (17 for this request), `counts`, and `qualification`. `succeeded` means only
 that the requested tests ran and none failed. This request selects gate `SG-2`
 plus `PC-EXP-1` and `PC-VER-1`, so `qualification.scope` is `partial`. The drill
 tests run only through a harness control API, so a job on two reference nodes
 stays partial. The runner starts two reference nodes of its own on ports
-`4743` and `4744` from the service's port pool and stops them before it exits. Configuration, profiles,
+`$POOL_FROM` and `$POOL_TO` from the service's port pool and stops them before it exits. Configuration, profiles,
 and limits: [service/README.md](service/README.md) and
 [docs/core-service-profile.md](docs/core-service-profile.md).
 
 ### 3. Export the evidence packet, verify it offline, and reject a flipped byte
 
 `PC-VER-1` makes the job assemble an evidence packet and the trust file the
-packet is checked against. Both stay private in the job directory. Copy them out:
+packet is checked against. Both stay private in the job directory. Copy them
+out, in the shell where you set `JOB`:
 
 ```sh
-JOB=JOB_ID
 cp -R .run/svc/state/jobs/$JOB/raw/packet .run/packet
 cp .run/svc/state/jobs/$JOB/raw/trust.json .run/trust.json
 node verifier/cli.mjs .run/packet --trust .run/trust.json --out .run/report
@@ -269,6 +297,8 @@ node verifier/cli.mjs .run/packet-flipped --trust .run/trust.json --out .run/rep
 ```
 
 Exit `1` and `FAIL`, with `FAIL files: hash mismatch results/results.jsonl`.
+A second line, `FAIL results: …`, may also appear, because the flipped bit
+corrupts that file.
 
 On macOS, `node runner/offline.mjs DIR` (where `DIR` holds `packet/` and
 `trust.json`) repeats the verification from a fresh clone under a sandbox that
